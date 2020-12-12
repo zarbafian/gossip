@@ -1,12 +1,12 @@
 use std::hash::{Hash, Hasher};
 use std::error::Error;
-
+use serde::{Serialize, Deserialize};
 // TODO: Refactor
 // Byte separator between the peer address and the peer age
 const SEPARATOR: u8 = 0x2C; // b','
 
 /// Information about a peer
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Peer {
     /// Socket address of the peer
     address: String,

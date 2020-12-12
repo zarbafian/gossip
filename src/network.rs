@@ -3,14 +3,27 @@ use std::io::{Write, Read};
 use std::thread::JoinHandle;
 use std::sync::Arc;
 use std::error::Error;
+use serde::Serialize;
 use std::sync::mpsc::Sender;
-use crate::message::{Message, PeerSamplingMessageParser, ContentMessageParser, HeaderMessageParser};
+use crate::message::Message;
 use crate::message::sampling::PeerSamplingMessage;
-use crate::message::gossip::ContentMessage;
+use crate::message::gossip::{ContentMessage, HeaderMessage};
 
-pub fn send(address: &SocketAddr, message: Box<dyn Message>) -> std::io::Result<usize> {
-    let written = TcpStream::connect(address)?.write(&message.as_bytes())?;
-    Ok(written)
+pub fn send<M>(address: &SocketAddr, message: Box<M>) -> Result<usize, Box<dyn Error>>
+where M: Message + Serialize
+{
+    match message.as_bytes() {
+        Ok(mut bytes) => {
+            let mut buffer = vec![message.protocol()];
+            buffer.append(&mut bytes);
+            let written = TcpStream::connect(address)?.write(&buffer)?;
+            Ok(written)
+        }
+        Err(e) => {
+            log::error!("Could not serialize message");
+            Err(e)?
+        }
+    }
 }
 
 pub fn listen(address: &SocketAddr, shutdown: Arc<std::sync::atomic::AtomicBool>, peer_sampling_sender: Sender<PeerSamplingMessage>, gossip_sender: Sender<ContentMessage>) -> std::io::Result<JoinHandle<()>> {
@@ -53,21 +66,21 @@ pub fn listen(address: &SocketAddr, shutdown: Arc<std::sync::atomic::AtomicBool>
 }
 
 fn handle_message(buffer: Vec<u8>, peer_sampling_sender: &Sender<PeerSamplingMessage>, header_sender: &Sender<ContentMessage>) -> Result<(), Box<dyn Error>> {
-    let protocol = buffer[0] & crate::message::MASK_PROTOCOL;
+    let protocol = buffer[0] & crate::message::MASK_MESSAGE_PROTOCOL;
     match protocol {
-        crate::message::MESSAGE_PROTOCOL_NOOP => Ok(()),
-        crate::message::MESSAGE_PROTOCOL_SAMPLING => {
-            let message = PeerSamplingMessageParser.parse(buffer)?;
+        crate::message::MESSAGE_PROTOCOL_NOOP_MESSAGE => Ok(()),
+        crate::message::MESSAGE_PROTOCOL_SAMPLING_MESSAGE => {
+            let message = PeerSamplingMessage::from_bytes(&buffer[1..])?;
             peer_sampling_sender.send(message)?;
             Ok(())
-        },
-        crate::message::MESSAGE_PROTOCOL_DATA => {
-            let message = ContentMessageParser.parse(buffer)?;
+        }
+        crate::message::MESSAGE_PROTOCOL_CONTENT_MESSAGE => {
+            let message = ContentMessage::from_bytes(&buffer[1..])?;
             header_sender.send(message)?;
             Ok(())
-        },
-        crate::message::MESSAGE_PROTOCOL_HEADER => {
-            let message = HeaderMessageParser.parse(buffer)?;
+        }
+        crate::message::MESSAGE_PROTOCOL_HEADER_MESSAGE => {
+            let message = HeaderMessage::from_bytes(&buffer[1..])?;
             // TODO
             // TODO
             // TODO

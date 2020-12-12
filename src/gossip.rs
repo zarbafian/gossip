@@ -1,7 +1,6 @@
 use std::thread::JoinHandle;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::mpsc::{Sender, Receiver};
 use crate::config::GossipConfig;
@@ -12,6 +11,7 @@ use crate::message::NoopMessage;
 use crate::peer::Peer;
 use crate::message::sampling::PeerSamplingMessage;
 use std::collections::HashMap;
+use std::error::Error;
 
 pub struct GossipService {
     /// Address of node

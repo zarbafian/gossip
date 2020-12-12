@@ -11,8 +11,8 @@ use std::iter::FromIterator;
 use crate::PeerSamplingConfig;
 use crate::peer::Peer;
 use crate::monitor::MonitoringConfig;
-use crate::message::sampling::{PeerSamplingMessage, MessageType};
-use crate::message::NoopMessage;
+use crate::message::sampling::PeerSamplingMessage;
+use crate::message::{self, NoopMessage};
 
 /// Peer sampling service to by used by application
 pub struct PeerSamplingService {
@@ -127,7 +127,7 @@ impl PeerSamplingService {
             while let Ok(message) = receiver.recv() {
                 log::debug!("Received: {:?}", message);
                 let mut view = view_arc.lock().unwrap();
-                if let MessageType::Request = message.message_type() {
+                if let message::MessageType::Request = message.message_type() {
                     if config.is_pull() {
                         let buffer = Self::build_buffer(address.clone(), &config, &mut view);
                         log::debug!("Built response buffer: {:?}", buffer);

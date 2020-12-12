@@ -1,22 +1,15 @@
-use std::error::Error;
 use std::fmt::Debug;
+use serde::{Serialize, Deserialize};
 use crate::peer::Peer;
-use crate::message::Message;
-
-/// The message type
-#[derive(Debug)]
-pub enum MessageType {
-    Request,
-    Response
-}
+use crate::message::{self, Message, MESSAGE_PROTOCOL_SAMPLING_MESSAGE};
 
 /// A peer sampling protocol message
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PeerSamplingMessage {
     /// Address of the sender
     sender: String,
     /// Type of the message
-    message_type: MessageType,
+    message_type: message::MessageType,
     /// The view of the sender
     view: Option<Vec<Peer>>,
 }
@@ -24,15 +17,15 @@ pub struct PeerSamplingMessage {
 impl PeerSamplingMessage {
     /// Creates a new message of type [MessageType::Request] containing a view
     pub fn new_request(sender: String, view: Option<Vec<Peer>>) -> Self {
-        Self::new(sender, MessageType::Request, view)
+        Self::new(sender, message::MessageType::Request, view)
     }
 
     /// Creates a new message of type [MessageType::Response] containing a view
     pub fn new_response(sender: String, view: Option<Vec<Peer>>) -> Self {
-        Self::new(sender, MessageType::Response, view)
+        Self::new(sender, message::MessageType::Response, view)
     }
 
-    fn new(sender: String, message_type: MessageType, view: Option<Vec<Peer>>) -> Self {
+    fn new(sender: String, message_type: message::MessageType, view: Option<Vec<Peer>>) -> Self {
         Self {
             sender,
             message_type,
@@ -46,7 +39,7 @@ impl PeerSamplingMessage {
     }
 
     /// Returns the message type
-    pub fn message_type(&self) -> &MessageType {
+    pub fn message_type(&self) -> &message::MessageType {
         &self.message_type
     }
 
@@ -57,93 +50,7 @@ impl PeerSamplingMessage {
 }
 
 impl Message for PeerSamplingMessage {
-    /// Serializes the message to a vector of bytes
-    fn as_bytes(&self) -> Vec<u8> {
-        let mut buffer = vec![];
-        // first byte: message type
-        match self.message_type {
-            MessageType::Request => buffer.push(crate::message::MESSAGE_TYPE_REQUEST | crate::message::MESSAGE_PROTOCOL_SAMPLING),
-            MessageType::Response => buffer.push(crate::message::MESSAGE_TYPE_RESPONSE | crate::message::MESSAGE_PROTOCOL_SAMPLING),
-        }
-        // sender
-        buffer.push(self.sender.as_bytes().len() as u8);
-        self.sender.as_bytes().iter().for_each(|byte| buffer.push(*byte));
-        // view
-        if let Some(peers) = &self.view {
-            // view size in number of peers
-            buffer.push(peers.len() as u8);
-            // rest of bytes: peers
-            peers.iter().map(|p| { p.as_bytes() }).for_each(|mut bytes| {
-                // length of peer data in bytes
-                buffer.push(bytes.len() as u8);
-                // peer data
-                buffer.append(&mut bytes);
-            });
-        } else {
-            // empty set
-            buffer.push(0);
-        }
-        buffer
-    }
-
-    /// Deserializes a message from bytes
-    ///
-    /// # Arguments
-    ///
-    /// * `bytes` - A message serialized as bytes
-    fn from_bytes(bytes: Vec<u8>) -> Result<Self, Box<dyn Error>> {
-
-        // message type(1) + sender size(1) + one byte for sender(>=1) + view size(1)
-        if bytes.len() < 4 {
-            Err("invalid message")?
-        }
-
-        // message type
-        let message_type = match bytes[0] & crate::message::MASK_MESSAGE_TYPE {
-            crate::message::MESSAGE_TYPE_REQUEST => MessageType::Request,
-            crate::message::MESSAGE_TYPE_RESPONSE => MessageType::Response,
-            _ => return Err("invalid message type")?,
-        };
-
-        // sender
-        let sender_size = bytes[1] as usize;
-        // message type(1) + sender size(1) + sender(sender_size) + view size(>=1)
-        if bytes.len() < 3 + sender_size {
-            Err("invalid message")?
-        }
-        let sender = String::from_utf8(bytes[2..2+sender_size].to_vec())?;
-
-        // view size
-        let view_size = bytes[2+sender_size];
-        // message type(1) + sender size(1) + sender(sender_size) + view size(2 * view_size)
-        if bytes.len() < (2 + sender_size + 2 * view_size as usize) {
-            Err("invalid message")?
-        }
-        if view_size > 0 {
-            let mut index = 3+sender_size;
-            let mut peers = vec![];
-            for _ in 0..view_size {
-                let peer_length = bytes[index] as usize;
-                // index + 1 + peer length
-                if bytes.len() < index + 1 + peer_length{
-                    return Err("invalid message")?;
-                }
-                let parsed_peer = Peer::from_bytes(&bytes[index+1..index+1+peer_length])?;
-                peers.push(parsed_peer);
-                index += peer_length + 1;
-            }
-            Ok(Self {
-                sender,
-                message_type,
-                view: Some(peers)
-            })
-        }
-        else {
-            Ok(Self {
-                sender,
-                message_type,
-                view: None
-            })
-        }
+    fn protocol(&self) -> u8 {
+        MESSAGE_PROTOCOL_SAMPLING_MESSAGE
     }
 }

@@ -13,7 +13,7 @@ impl TextMessageListener {
     }
 }
 
-//#[test]
+#[test]
 fn start_gossip() {
     common::configure_logging(log::LevelFilter::Debug).unwrap();
 
