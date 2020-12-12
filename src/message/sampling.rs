@@ -3,11 +3,6 @@ use std::fmt::Debug;
 use crate::peer::Peer;
 use crate::message::Message;
 
-// TODO: Remove
-const MSG_TYPE_REQ: u8 = 0x80; // 0b1000000
-const MSG_TYPE_RESP: u8 = 0x00;
-const MASK_MSG_TYPE: u8 = 0x80; // 0b1000000
-
 /// The message type
 #[derive(Debug)]
 pub enum MessageType {
@@ -59,13 +54,44 @@ impl PeerSamplingMessage {
     pub fn view(&self) -> &Option<Vec<Peer>> {
         &self.view
     }
+}
+
+impl Message for PeerSamplingMessage {
+    /// Serializes the message to a vector of bytes
+    fn as_bytes(&self) -> Vec<u8> {
+        let mut buffer = vec![];
+        // first byte: message type
+        match self.message_type {
+            MessageType::Request => buffer.push(crate::message::MESSAGE_TYPE_REQUEST | crate::message::MESSAGE_PROTOCOL_SAMPLING),
+            MessageType::Response => buffer.push(crate::message::MESSAGE_TYPE_RESPONSE | crate::message::MESSAGE_PROTOCOL_SAMPLING),
+        }
+        // sender
+        buffer.push(self.sender.as_bytes().len() as u8);
+        self.sender.as_bytes().iter().for_each(|byte| buffer.push(*byte));
+        // view
+        if let Some(peers) = &self.view {
+            // view size in number of peers
+            buffer.push(peers.len() as u8);
+            // rest of bytes: peers
+            peers.iter().map(|p| { p.as_bytes() }).for_each(|mut bytes| {
+                // length of peer data in bytes
+                buffer.push(bytes.len() as u8);
+                // peer data
+                buffer.append(&mut bytes);
+            });
+        } else {
+            // empty set
+            buffer.push(0);
+        }
+        buffer
+    }
 
     /// Deserializes a message from bytes
     ///
     /// # Arguments
     ///
     /// * `bytes` - A message serialized as bytes
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, Box<dyn Error>> {
+    fn from_bytes(bytes: Vec<u8>) -> Result<Self, Box<dyn Error>> {
 
         // message type(1) + sender size(1) + one byte for sender(>=1) + view size(1)
         if bytes.len() < 4 {
@@ -73,9 +99,9 @@ impl PeerSamplingMessage {
         }
 
         // message type
-        let message_type = match bytes[0] & MASK_MSG_TYPE {
-            MSG_TYPE_REQ => MessageType::Request,
-            MSG_TYPE_RESP => MessageType::Response,
+        let message_type = match bytes[0] & crate::message::MASK_MESSAGE_TYPE {
+            crate::message::MESSAGE_TYPE_REQUEST => MessageType::Request,
+            crate::message::MESSAGE_TYPE_RESPONSE => MessageType::Response,
             _ => return Err("invalid message type")?,
         };
 
@@ -119,36 +145,5 @@ impl PeerSamplingMessage {
                 view: None
             })
         }
-    }
-}
-
-impl Message for PeerSamplingMessage {
-    /// Serializes the message to a vector of bytes
-    fn as_bytes(&self) -> Vec<u8> {
-        let mut buffer = vec![];
-        // first byte: message type
-        match self.message_type {
-            MessageType::Request => buffer.push(MSG_TYPE_REQ),
-            MessageType::Response => buffer.push(MSG_TYPE_RESP),
-        }
-        // sender
-        buffer.push(self.sender.as_bytes().len() as u8);
-        self.sender.as_bytes().iter().for_each(|byte| buffer.push(*byte));
-        // view
-        if let Some(peers) = &self.view {
-            // view size in number of peers
-            buffer.push(peers.len() as u8);
-            // rest of bytes: peers
-            peers.iter().map(|p| { p.as_bytes() }).for_each(|mut bytes| {
-                // length of peer data in bytes
-                buffer.push(bytes.len() as u8);
-                // peer data
-                buffer.append(&mut bytes);
-            });
-        } else {
-            // empty set
-            buffer.push(0);
-        }
-        buffer
     }
 }

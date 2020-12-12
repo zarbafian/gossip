@@ -7,10 +7,11 @@ use std::sync::mpsc::{Sender, Receiver};
 use crate::config::GossipConfig;
 use crate::PeerSamplingConfig;
 use crate::sampling::PeerSamplingService;
-use crate::message::gossip::GossipMessage;
+use crate::message::gossip::ContentMessage;
 use crate::message::NoopMessage;
 use crate::peer::Peer;
 use crate::message::sampling::PeerSamplingMessage;
+use std::collections::HashMap;
 
 pub struct GossipService {
     /// Address of node
@@ -23,6 +24,9 @@ pub struct GossipService {
     shutdown: Arc<AtomicBool>,
     /// Thread handles
     activities: Vec<JoinHandle<()>>,
+
+    // TODO
+    active_messages: Arc<Mutex<HashMap<String, ContentMessage>>>
 }
 
 impl GossipService {
@@ -39,6 +43,7 @@ impl GossipService {
             gossip_config,
             shutdown: Arc::new(AtomicBool::new(false)),
             activities: Vec::new(),
+            active_messages: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -49,7 +54,7 @@ impl GossipService {
         {
             self.peer_sampling_service.lock().unwrap().init(peer_sampling_init, rx_sampling);
         }
-        let (tx_gossip, rx_gossip) = std::sync::mpsc::channel::<GossipMessage>();
+        let (tx_gossip, rx_gossip) = std::sync::mpsc::channel::<ContentMessage>();
 
         // start gossip message handler
         self.start_gossip_receiver(rx_gossip).expect("Error starting message handler for gossip message");
@@ -60,7 +65,7 @@ impl GossipService {
         Ok(())
     }
 
-    fn start_gossip_receiver(&mut self, receiver: Receiver<GossipMessage>) -> Result<(), Box<dyn Error>> {
+    fn start_gossip_receiver(&mut self, receiver: Receiver<ContentMessage>) -> Result<(), Box<dyn Error>> {
         let address = self.address.to_string();
         let handle = std::thread::Builder::new().name(format!("{} - gossip receiver", address)).spawn(move|| {
             log::info!("Started message handling thread");
@@ -73,7 +78,7 @@ impl GossipService {
         Ok(())
     }
 
-    fn start_network_listener(&mut self, peer_sampling_sender: Sender<PeerSamplingMessage>, gossip_sender: Sender<GossipMessage>) -> Result<(), Box<dyn Error>> {
+    fn start_network_listener(&mut self, peer_sampling_sender: Sender<PeerSamplingMessage>, gossip_sender: Sender<ContentMessage>) -> Result<(), Box<dyn Error>> {
         let handle = crate::network::listen(self.gossip_config.address(),  Arc::clone(&self.shutdown), peer_sampling_sender, gossip_sender)?;
         self.activities.push(handle);
         Ok(())
@@ -95,7 +100,7 @@ impl GossipService {
                 if let Some(peer) = peer_sampling_service.get_peer() {
                     if let Ok(address) = peer.address().parse::<SocketAddr>() {
                         drop(peer_sampling_service);
-                        let message = GossipMessage::new();
+                        let message = ContentMessage::new("toto".to_owned(), vec![]);
                         match crate::network::send(&address, Box::new(message)) {
                             Ok(written) => log::debug!("sent {} bytes to {:?}", written, address),
                             Err(e) => log::error!("Error sending message: {:?}", e)
@@ -114,8 +119,15 @@ impl GossipService {
         Ok(())
     }
 
-    pub fn submit(&self, bytes: Vec<u8>) {
-
+    /// Submits a message for broadcast by the gossip protocol
+    ///
+    /// # Arguments
+    ///
+    /// `message_id` - A unique identifier for the message
+    /// `bytes` - Content of the message.
+    pub fn submit(&self, message_id: String, bytes: Vec<u8>) {
+        let mut active_messages = self.active_messages.lock().unwrap();
+        active_messages.insert(message_id.clone(), ContentMessage::new(message_id, bytes));
     }
 
     /// Terminate gossiping-related activities

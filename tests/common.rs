@@ -7,7 +7,7 @@ pub fn configure_logging(level: log::LevelFilter) -> Result<(), Box<dyn Error>>{
     use log4rs::append::console::ConsoleAppender;
 
     let console = ConsoleAppender::builder()
-        .encoder(Box::new(PatternEncoder::new("[{l}] {T} - {m}{n}")))
+        .encoder(Box::new(PatternEncoder::new("{h({l})} {T} - {m}{n}")))
         .build();
 
     let config = Config::builder()
