@@ -1,4 +1,3 @@
-use log::LevelFilter;
 use std::error::Error;
 
 pub fn configure_logging(level: log::LevelFilter) -> Result<(), Box<dyn Error>>{
