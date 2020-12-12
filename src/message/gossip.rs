@@ -14,6 +14,9 @@ impl HeaderMessage {
     pub fn push(&mut self, message_id: String, message_digest: String) {
         self.messages.push((message_id, message_digest));
     }
+    pub fn messages(&self) -> &Vec<(String, String)> {
+        &self.messages
+    }
 }
 impl Message for HeaderMessage {
     fn protocol(&self) -> u8 {
@@ -51,6 +54,15 @@ impl ContentMessage {
 
     pub fn content(&self) -> &Vec<u8> {
         &self.content
+    }
+
+    pub fn digest(&self) -> String {
+        // TODO
+        // TODO
+        // TODO
+        let mut hexa = String::new();
+        self.content.iter().for_each(|byte| hexa.push_str(&format!("{:x}", byte)));
+        hexa
     }
 }
 

@@ -26,7 +26,7 @@ where M: Message + Serialize
     }
 }
 
-pub fn listen(address: &SocketAddr, shutdown: Arc<std::sync::atomic::AtomicBool>, peer_sampling_sender: Sender<PeerSamplingMessage>, gossip_sender: Sender<ContentMessage>) -> std::io::Result<JoinHandle<()>> {
+pub fn listen(address: &SocketAddr, shutdown: Arc<std::sync::atomic::AtomicBool>, peer_sampling_sender: Sender<PeerSamplingMessage>, header_sender: Sender<HeaderMessage>, content_sender: Sender<ContentMessage>) -> std::io::Result<JoinHandle<()>> {
 
     let listener = std::net::TcpListener::bind(address)?;
     log::info!("Listener started at {}", address);
@@ -49,7 +49,7 @@ pub fn listen(address: &SocketAddr, shutdown: Arc<std::sync::atomic::AtomicBool>
                     match stream.read_to_end(&mut buf) {
                         Ok(read) => {
                             if read > 0 {
-                                match handle_message(buf, &peer_sampling_sender, &gossip_sender) {
+                                match handle_message(buf, &peer_sampling_sender, &header_sender, &content_sender) {
                                     Ok(()) => log::debug!("Message parsed successfully"),
                                     Err(e) => log::error!("{:?}", e),
                                 }
@@ -65,7 +65,7 @@ pub fn listen(address: &SocketAddr, shutdown: Arc<std::sync::atomic::AtomicBool>
     }).unwrap())
 }
 
-fn handle_message(buffer: Vec<u8>, peer_sampling_sender: &Sender<PeerSamplingMessage>, header_sender: &Sender<ContentMessage>) -> Result<(), Box<dyn Error>> {
+fn handle_message(buffer: Vec<u8>, peer_sampling_sender: &Sender<PeerSamplingMessage>, header_sender: &Sender<HeaderMessage>, content_sender: &Sender<ContentMessage>) -> Result<(), Box<dyn Error>> {
     let protocol = buffer[0] & crate::message::MASK_MESSAGE_PROTOCOL;
     match protocol {
         crate::message::MESSAGE_PROTOCOL_NOOP_MESSAGE => Ok(()),
@@ -76,15 +76,12 @@ fn handle_message(buffer: Vec<u8>, peer_sampling_sender: &Sender<PeerSamplingMes
         }
         crate::message::MESSAGE_PROTOCOL_CONTENT_MESSAGE => {
             let message = ContentMessage::from_bytes(&buffer[1..])?;
-            header_sender.send(message)?;
+            content_sender.send(message)?;
             Ok(())
         }
         crate::message::MESSAGE_PROTOCOL_HEADER_MESSAGE => {
             let message = HeaderMessage::from_bytes(&buffer[1..])?;
-            // TODO
-            // TODO
-            // TODO
-            //header_sender.send(message)?;
+            header_sender.send(message)?;
             Ok(())
         }
         _ => Err(format!("Unknown protocol: {}", protocol))?

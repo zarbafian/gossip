@@ -46,13 +46,17 @@ fn start_gossip() {
     let message_id_1 = "abcd-efgh";
     let message_content_1 = "{{ \"id\": \"toto\", \"name\": \"John Doe\" }}";
     service_1.submit(message_id_1.to_owned(), message_content_1.as_bytes().to_vec());
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     // binary message
     let message_id_2 = "ijkl-mnop";
     let message_content_2 = "Just some simple text for Toto!\nBut why?";
     service_2.submit(message_id_2.to_owned(), message_content_2.as_bytes().to_vec());
 
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
+    // wait for gossip
+    std::thread::sleep(std::time::Duration::from_secs(5));
 
     service_1.shutdown();
     service_2.shutdown();
