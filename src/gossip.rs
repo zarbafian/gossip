@@ -6,7 +6,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use crate::config::GossipConfig;
 use crate::PeerSamplingConfig;
 use crate::sampling::PeerSamplingService;
-use crate::message::gossip::{Update, HeaderMessage, ContentMessage};
+use crate::message::gossip::{Update, UpdateHandler, HeaderMessage, ContentMessage};
 use crate::message::{NoopMessage, MessageType};
 use crate::peer::Peer;
 use crate::message::sampling::PeerSamplingMessage;
@@ -15,7 +15,7 @@ use std::error::Error;
 use crate::monitor::MonitoringConfig;
 use rand::Rng;
 
-pub struct GossipService {
+pub struct GossipService<T> {
     /// Address of node
     address: SocketAddr,
     /// Peer sampling service
@@ -28,18 +28,22 @@ pub struct GossipService {
     activities: Vec<JoinHandle<()>>,
     /// Active updates
     active_updates: Arc<Mutex<HashMap<String, Update>>>,
+    /// Application callback for handling updates
+    update_callback: Arc<Mutex<Option<Box<T>>>>,
     /// Monitoring configuration
     monitoring_config: MonitoringConfig,
 }
 
-impl GossipService {
+impl<T> GossipService<T>
+where T: UpdateHandler + 'static + Send
+{
     /// Creates a new gossiping service
     ///
     /// # Arguments
     ///
     /// * `peer_sampling_config` - Configuration for peer sampling
     /// * `gossip_config` - Configuration for gossiping
-    pub fn new(address: SocketAddr, peer_sampling_config: PeerSamplingConfig, gossip_config: GossipConfig, monitoring_config: Option<MonitoringConfig>) -> GossipService {
+    pub fn new(address: SocketAddr, peer_sampling_config: PeerSamplingConfig, gossip_config: GossipConfig, monitoring_config: Option<MonitoringConfig>) -> GossipService<T> {
         let monitoring_config = monitoring_config.unwrap_or_default();
         GossipService{
             address,
@@ -48,12 +52,16 @@ impl GossipService {
             shutdown: Arc::new(AtomicBool::new(false)),
             activities: Vec::new(),
             active_updates: Arc::new(Mutex::new(HashMap::new())),
+            update_callback: Arc::new(Mutex::new(None)),
             monitoring_config,
         }
     }
 
     /// Start gossiping-related activities
-    pub fn start(&mut self, peer_sampling_init: Box<dyn FnOnce() -> Option<Vec<Peer>>>) -> Result<(), Box<dyn Error>> {
+    pub fn start(&mut self, peer_sampling_init: Box<dyn FnOnce() -> Option<Vec<Peer>>>, update_callback: Box<T>) -> Result<(), Box<dyn Error>> {
+
+        self.update_callback.lock().unwrap().replace(update_callback);
+
         // start peer sampling
         let (tx_sampling, rx_sampling) = std::sync::mpsc::channel::<PeerSamplingMessage>();
         {
@@ -127,6 +135,7 @@ impl GossipService {
     fn start_message_content_handler(&mut self, receiver: Receiver<ContentMessage>) -> Result<(), Box<dyn Error>> {
         let address = self.address.to_string();
         let active_updates_arc = Arc::clone(&self.active_updates);
+        let update_callback_arc = Arc::clone(&self.update_callback);
         let monitoring_config = self.monitoring_config.clone();
         let handle = std::thread::Builder::new().name(format!("{} - content receiver", address)).spawn(move|| {
             log::info!("Started message content handling thread");
@@ -161,6 +170,12 @@ impl GossipService {
                                     if digest == update.digest() {
                                         active_updates.insert(digest.to_owned(), update);
                                         log::debug!("Added update with digest {}", digest);
+                                        let mutex = update_callback_arc.lock().unwrap();
+                                        if let Some(callback) = mutex.as_ref() {
+                                            let update_app = Update::new(content.clone());
+                                            callback.on_update(update_app);
+                                        }
+
                                     }
                                     else {
                                         log::warn!("Digests did not match: {} <> {}", digest, update.digest())
@@ -262,6 +277,7 @@ impl GossipService {
 
     /// Terminate gossiping-related activities
     pub fn shutdown(&mut self) -> Result<(), Box<dyn Error>> {
+        self.update_callback.lock().unwrap().take();
         self.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
         log::info!("Shutdown requested");
         if let Ok(_) = crate::network::send(self.gossip_config.address(), Box::new(NoopMessage)) {

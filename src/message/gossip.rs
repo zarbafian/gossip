@@ -109,3 +109,8 @@ impl Update {
         &self.digest
     }
 }
+
+/// Trait for receiving updates from the gossip protocol
+pub trait UpdateHandler {
+    fn on_update(&self, update: Update);
+}
