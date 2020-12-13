@@ -1,15 +1,15 @@
-use gossip::GossipService;
-
 mod common;
 
 #[test]
 fn peer_sampling_smoke_test() {
-    use gossip::{GossipConfig, PeerSamplingConfig, MonitoringConfig, Peer};
+    use rand::Rng;
+    use gossip::{GossipConfig, PeerSamplingConfig, MonitoringConfig, Peer, GossipService};
 
     common::configure_logging(log::LevelFilter::Warn).unwrap();
 
     // algorithm parameters
-    let gossip_period = 2000;
+    let gossip_period = 400;
+    let gossip_deviation = 400;
 
     let sampling_period = 2;
     let sampling_deviation = 2;
@@ -23,7 +23,7 @@ fn peer_sampling_smoke_test() {
 
     let monitoring_config = MonitoringConfig::new(true, "127.0.0.1:8080".to_owned(), "/peers".to_owned(), "/updates".to_owned());
 
-    let peers_per_protocol = 10;
+    let peers_per_protocol = 40;
     let mut instances = vec![];
 
     // create first peer with no contact peer
@@ -35,7 +35,7 @@ fn peer_sampling_smoke_test() {
     let mut service = GossipService::new(
         init_address.parse().unwrap(),
         PeerSamplingConfig::new(true, true, sampling_period, sampling_deviation, c, h, c),
-        GossipConfig::new(true, true, init_address.parse().unwrap(), gossip_period),
+        GossipConfig::new(true, true, init_address.parse().unwrap(), gossip_period, gossip_deviation),
         Some(monitoring_config.clone())
     );
     service.start(no_peer_handler);
@@ -53,7 +53,7 @@ fn peer_sampling_smoke_test() {
         let mut ipv4_service = GossipService::new(
             address.parse().unwrap(),
             PeerSamplingConfig::new(true, true, sampling_period, sampling_deviation, c, h, c),
-            GossipConfig::new(true, true, address.parse().unwrap(), gossip_period),
+            GossipConfig::new(true, true, address.parse().unwrap(), gossip_period, gossip_deviation),
             Some(monitoring_config.clone())
         );
         ipv4_service.start(init_handler);
@@ -81,7 +81,23 @@ fn peer_sampling_smoke_test() {
 */
     std::thread::sleep(std::time::Duration::from_secs(11));
 
-    //assert!(&instances[0].get_peer().is_some());
+    for i in 0..40 {
+        let selected_peer = rand::thread_rng().gen_range(0, instances.len());
+        instances[selected_peer].submit(format!("MSGID {}", i).as_bytes().to_vec());
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+
+    std::thread::sleep(std::time::Duration::from_secs(20));
+    log::error!("-----------------------");
+    log::error!("-----------------------");
+    log::error!("-----------------------");
+    log::error!("SHUTDOWN");
+    log::error!("SHUTDOWN");
+    log::error!("SHUTDOWN");
+    log::error!("-----------------------");
+    log::error!("-----------------------");
+    log::error!("-----------------------");
+    std::thread::sleep(std::time::Duration::from_secs(5));
 
     for mut instance in instances {
         instance.shutdown();

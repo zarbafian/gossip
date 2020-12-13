@@ -68,7 +68,7 @@ impl MonitoringConfig {
     /// * `updates` - List of updates the process has received
     pub fn send_update_data(&self, pid: String, updates: Vec<String>) {
         let host = self.host.clone();
-        let path = self.peer_path.clone();
+        let path = self.update_path.clone();
         std::thread::spawn(move || {
             let updates_str = updates.iter()
                 .map(|update| format!("\"{}\"", update))
@@ -116,7 +116,7 @@ impl MonitoringConfig {
         let mut buf = String::new();
         let _result = stream.read_to_string(&mut buf)?;
         //println!("result = {}", result);
-        log::debug!("buf = {}", buf);
+        //log::debug!("buf = {}", buf);
 
         Ok(())
     }

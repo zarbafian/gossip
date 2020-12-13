@@ -13,6 +13,7 @@ use crate::message::sampling::PeerSamplingMessage;
 use std::collections::HashMap;
 use std::error::Error;
 use crate::monitor::MonitoringConfig;
+use rand::Rng;
 
 pub struct GossipService {
     /// Address of node
@@ -193,6 +194,7 @@ impl GossipService {
         let node_address = self.address.to_string();
         let shutdown_requested = Arc::clone(&self.shutdown);
         let gossip_interval = self.gossip_config.gossip_interval();
+        let gossip_deviation = self.gossip_config.gossip_deviation();
         let peer_sampling_arc = Arc::clone(&self.peer_sampling_service);
         let active_updates_arc = Arc::clone(&self.active_updates);
         let handle = std::thread::Builder::new().name(format!("{} - gossip activity", self.gossip_config.address().to_string())).spawn(move ||{
@@ -201,7 +203,9 @@ impl GossipService {
                 if shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
                     break;
                 }
-                std::thread::sleep(std::time::Duration::from_millis(gossip_interval));
+
+                let sleep = gossip_interval + rand::thread_rng().gen_range(0, gossip_deviation);
+                std::thread::sleep(std::time::Duration::from_millis(sleep));
 
                 let mut peer_sampling_service = peer_sampling_arc.lock().unwrap();
                 if let Some(peer) = peer_sampling_service.get_peer() {
@@ -244,13 +248,13 @@ impl GossipService {
     /// `message_id` - A unique identifier for the message
     /// `bytes` - Content of the message.
     pub fn submit(&self, bytes: Vec<u8>) -> Result<(), Box<dyn Error>> {
-        let message = Update::new(bytes);
-        let mut active_messages = self.active_updates.lock().unwrap();
-        if active_messages.contains_key(message.digest()) {
+        let update = Update::new(bytes);
+        let mut active_updates = self.active_updates.lock().unwrap();
+        if active_updates.contains_key(update.digest()) {
             Err("Message already active")?
         }
         else {
-            active_messages.insert(message.digest().to_owned(), message);
+            active_updates.insert(update.digest().to_owned(), update);
             // TODO: store actual content
             Ok(())
         }
