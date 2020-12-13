@@ -80,16 +80,31 @@ impl PeerSamplingConfig {
 
 /// The gossip parameters
 pub struct GossipConfig {
+    /// Does the node push its content
+    push: bool,
+    /// When active, if the node will pull content headers from other peers
+    /// When passive, if it responds with its content headers to pull from other peers
+    pull: bool,
+    /// Host address
     address: SocketAddr,
+    /// Length of each gossip period
     gossip_interval: u64,
 }
 
 impl GossipConfig {
-    pub fn new(address: SocketAddr, gossip_interval: u64) -> Self {
+    pub fn new(push: bool, pull: bool, address: SocketAddr, gossip_interval: u64) -> Self {
         GossipConfig {
+            push,
+            pull,
             address,
             gossip_interval,
         }
+    }
+    pub fn is_push(&self) -> bool {
+        self.push
+    }
+    pub fn is_pull(&self) -> bool {
+        self.pull
     }
     pub fn address(&self) -> &SocketAddr {
         &self.address

@@ -7,7 +7,7 @@ use serde::Serialize;
 use std::sync::mpsc::Sender;
 use crate::message::Message;
 use crate::message::sampling::PeerSamplingMessage;
-use crate::message::gossip::{ContentMessage, HeaderMessage};
+use crate::message::gossip::{HeaderMessage, ContentMessage};
 
 pub fn send<M>(address: &SocketAddr, message: Box<M>) -> Result<usize, Box<dyn Error>>
 where M: Message + Serialize

@@ -11,6 +11,7 @@ log = "0.4.11"
 rand = "0.7.3"
 serde = { version = "1.0.118", features = ["derive"] }
 serde_cbor = "0.11.1"
+blake3 = "0.3.7"
 
 [dev-dependencies]
 log4rs = "1.0.0-alpha-2"

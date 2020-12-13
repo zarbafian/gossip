@@ -6,8 +6,8 @@ use std::sync::mpsc::{Sender, Receiver};
 use crate::config::GossipConfig;
 use crate::PeerSamplingConfig;
 use crate::sampling::PeerSamplingService;
-use crate::message::gossip::{ContentMessage, HeaderMessage};
-use crate::message::NoopMessage;
+use crate::message::gossip::{Update, HeaderMessage, ContentMessage};
+use crate::message::{NoopMessage, MessageType};
 use crate::peer::Peer;
 use crate::message::sampling::PeerSamplingMessage;
 use std::collections::HashMap;
@@ -24,10 +24,8 @@ pub struct GossipService {
     shutdown: Arc<AtomicBool>,
     /// Thread handles
     activities: Vec<JoinHandle<()>>,
-
-    // TODO
-    active_messages: Arc<Mutex<HashMap<String, String>>>
-    //messages: Arc<Mutex<HashMap<String, Conten>>>
+    /// Active updates
+    active_updates: Arc<Mutex<HashMap<String, Update>>>
 }
 
 impl GossipService {
@@ -44,7 +42,7 @@ impl GossipService {
             gossip_config,
             shutdown: Arc::new(AtomicBool::new(false)),
             activities: Vec::new(),
-            active_messages: Arc::new(Mutex::new(HashMap::new())),
+            active_updates: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -70,19 +68,50 @@ impl GossipService {
     }
 
     fn start_message_header_handler(&mut self, receiver: Receiver<HeaderMessage>) -> Result<(), Box<dyn Error>> {
+        let pull = self.gossip_config.is_pull();
         let address = self.address.to_string();
-        let active_messages_arc = Arc::clone(&self.active_messages);
+        let active_updates_arc = Arc::clone(&self.active_updates);
         let handle = std::thread::Builder::new().name(format!("{} - header receiver", address)).spawn(move|| {
             log::info!("Started message header handling thread");
             while let Ok(message) = receiver.recv() {
-                let mut active_messages = active_messages_arc.lock().unwrap();
-                // TODO: check also digest
-                message.messages().iter().for_each(|(id, digest)| {
-                    log::debug!("Received: {} -> {}", id, digest);
-                    if !active_messages.contains_key(id) {
-                        active_messages.insert(id.to_owned(), digest.to_owned());
+
+                if let Ok(sender_address) = message.sender().parse::<SocketAddr>() {
+
+                    let active_updates = active_updates_arc.lock().unwrap();
+
+                    // Response with message headers
+                    if pull && active_updates.len() > 0 && *message.message_type() == MessageType::Request {
+                        let mut message = HeaderMessage::new_response(address.clone());
+                        active_updates.iter()
+                            .for_each(|(digest, _)| message.push(digest.to_owned()));
+                        match crate::network::send(&sender_address, Box::new(message)) {
+                            Ok(written) => log::debug!("Sent header response - {} bytes to {:?}", written, sender_address),
+                            Err(e) => log::error!("Error sending header response: {:?}", e)
+                        }
                     }
-                });
+
+                    // Process received headers
+                    let mut digests = HashMap::new();
+                    message.messages().iter().for_each(|digest| {
+                        if !active_updates.contains_key(digest) {
+                            log::debug!("New digest: {}", digest);
+                            digests.insert(digest.to_owned(), vec![]);
+                        }
+                        else {
+                            log::debug!("Duplicate digest: {}", digest);
+                        }
+                    });
+                    if digests.len() > 0 {
+                        let message = ContentMessage::new_request(address.clone(), digests);
+                        match crate::network::send(&sender_address, Box::new(message)) {
+                            Ok(written) => log::debug!("Sent content request - {} bytes to {:?}", written, sender_address),
+                            Err(e) => log::error!("Error content request response: {:?}", e)
+                        }
+                    }
+                }
+                else {
+                    log::error!("Could not parse sender address {}", message.sender());
+                }
             }
             log::info!("Message header handling thread exiting");
         }).unwrap();
@@ -91,12 +120,51 @@ impl GossipService {
     }
     fn start_message_content_handler(&mut self, receiver: Receiver<ContentMessage>) -> Result<(), Box<dyn Error>> {
         let address = self.address.to_string();
+        let active_updates_arc = Arc::clone(&self.active_updates);
         let handle = std::thread::Builder::new().name(format!("{} - content receiver", address)).spawn(move|| {
             log::info!("Started message content handling thread");
             while let Ok(message) = receiver.recv() {
-                log::debug!("Received: {} -> {}", message.id(), String::from_utf8(message.content().to_vec()).unwrap());
+
+                match message.message_type() {
+                    MessageType::Request => {
+                        log::debug!("Received content request: {:?}", message.content());
+                        if let Ok(peer_address) = message.sender().parse::<SocketAddr>() {
+                            let active_updates = active_updates_arc.lock().unwrap();
+                            if active_updates.len() > 0 {
+                                let mut map = HashMap::new();
+                                message.content().iter().for_each(|(digest, _)| {
+                                    if let Some(update) = active_updates.get(digest) {
+                                        map.insert(digest.to_owned(), update.content().to_vec());
+                                    }
+                                });
+                                let message = ContentMessage::new_response(address.clone(), map);
+                                match crate::network::send(&peer_address, Box::new(message)) {
+                                    Ok(written) => log::debug!("Sent content response - {} bytes to {:?}", written, peer_address),
+                                    Err(e) => log::error!("Error content response: {:?}", e)
+                                }
+                            }
+                        }
+                    }
+                    MessageType::Response => {
+                        if message.content().len() > 0 {
+                            let mut active_updates = active_updates_arc.lock().unwrap();
+                            message.content().iter().for_each(|(digest, content)| {
+                                if !active_updates.contains_key(digest) {
+                                    let update = Update::new(content.clone());
+                                    if digest == update.digest() {
+                                        active_updates.insert(digest.to_owned(), update);
+                                        log::debug!("Added update with digest {}", digest);
+                                    }
+                                    else {
+                                        log::warn!("Digests did not match: {} <> {}", digest, update.digest())
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+                //log::debug!("Received content of digest: {}", message.digest());
             }
-            log::info!("Message content handling thread exiting");
         }).unwrap();
         self.activities.push(handle);
         Ok(())
@@ -109,10 +177,12 @@ impl GossipService {
     }
 
     fn start_gossip_activity(&mut self) -> Result<(), Box<dyn Error>> {
+        let push = self.gossip_config.is_push();
+        let node_address = self.address.to_string();
         let shutdown_requested = Arc::clone(&self.shutdown);
         let gossip_interval = self.gossip_config.gossip_interval();
         let peer_sampling_arc = Arc::clone(&self.peer_sampling_service);
-        let active_messages_arc = Arc::clone(&self.active_messages);
+        let active_updates_arc = Arc::clone(&self.active_updates);
         let handle = std::thread::Builder::new().name(format!("{} - gossip activity", self.gossip_config.address().to_string())).spawn(move ||{
             log::info!("Gossip thread started");
             loop {
@@ -123,17 +193,23 @@ impl GossipService {
 
                 let mut peer_sampling_service = peer_sampling_arc.lock().unwrap();
                 if let Some(peer) = peer_sampling_service.get_peer() {
-                    if let Ok(address) = peer.address().parse::<SocketAddr>() {
+                    if let Ok(peer_address) = peer.address().parse::<SocketAddr>() {
                         drop(peer_sampling_service);
-                        let active_messages = active_messages_arc.lock().unwrap();
-                        if active_messages.len() > 0 {
-                            let mut message = HeaderMessage::new();
-                            active_messages.iter()
-                                .for_each(|(id, digest)| message.push(id.to_owned(), digest.to_owned()));
-                            match crate::network::send(&address, Box::new(message)) {
-                                Ok(written) => log::debug!("sent {} bytes to {:?}", written, address),
-                                Err(e) => log::error!("Error sending message: {:?}", e)
+                        let mut message = HeaderMessage::new_request(node_address.to_string());
+                        if push {
+                            // send active headers
+                            let active_updates = active_updates_arc.lock().unwrap();
+                            if active_updates.len() > 0 {
+                                active_updates.iter()
+                                    .for_each(|(digest, _)| message.push(digest.to_owned()));
                             }
+                        }
+                        else {
+                            // send empty headers to trigger response
+                        }
+                        match crate::network::send(&peer_address, Box::new(message)) {
+                            Ok(written) => log::debug!("Sent header request - {} bytes to {:?}", written, peer_address),
+                            Err(e) => log::error!("Error sending header request: {:?}", e)
                         }
                     }
                 }
@@ -155,14 +231,14 @@ impl GossipService {
     ///
     /// `message_id` - A unique identifier for the message
     /// `bytes` - Content of the message.
-    pub fn submit(&self, message_id: String, bytes: Vec<u8>) -> Result<(), Box<dyn Error>> {
-        let mut active_messages = self.active_messages.lock().unwrap();
-        if active_messages.contains_key(&message_id) {
+    pub fn submit(&self, bytes: Vec<u8>) -> Result<(), Box<dyn Error>> {
+        let message = Update::new(bytes);
+        let mut active_messages = self.active_updates.lock().unwrap();
+        if active_messages.contains_key(message.digest()) {
             Err("Message already active")?
         }
         else {
-            let message = ContentMessage::new(message_id.clone(), bytes);
-            active_messages.insert(message_id.clone(), message.digest());
+            active_messages.insert(message.digest().to_owned(), message);
             // TODO: store actual content
             Ok(())
         }
@@ -172,7 +248,9 @@ impl GossipService {
     pub fn shutdown(&mut self) -> Result<(), Box<dyn Error>> {
         self.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
         log::info!("Shutdown requested");
-        crate::network::send(self.gossip_config.address(), Box::new(NoopMessage));
+        if let Ok(_) = crate::network::send(self.gossip_config.address(), Box::new(NoopMessage)) {
+            // shutdown request sent
+        }
         let mut error = false;
         self.activities.drain(..).for_each(move|handle| {
             if let Err(e) = handle.join() {

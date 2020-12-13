@@ -10,12 +10,9 @@ pub const MESSAGE_PROTOCOL_SAMPLING_MESSAGE: u8 = 0x10; // 0b00010000
 pub const MESSAGE_PROTOCOL_HEADER_MESSAGE: u8   = 0x20; // 0b00100000
 pub const MESSAGE_PROTOCOL_CONTENT_MESSAGE: u8  = 0x40; // 0b01000000
 pub const MESSAGE_PROTOCOL_NOOP_MESSAGE: u8     = 0x80; // 0b10000000
-pub const MASK_MESSAGE_TYPE: u8                 = 0x0F; // 0b00001111
-pub const MESSAGE_TYPE_REQUEST: u8              = 0x01; // 0b00000001
-pub const MESSAGE_TYPE_RESPONSE: u8             = 0x02; // 0b00000010
 
 /// The message type
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MessageType {
     Request = 1,
     Response = 2,
