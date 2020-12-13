@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use crate::monitor::MonitoringConfig;
 
 /// The peer sampling parameters
 ///
@@ -22,17 +21,11 @@ pub struct PeerSamplingConfig {
     healing_factor: usize,
     /// The number of peer swapped at each cycle
     swapping_factor: usize,
-    /// Monitoring configuration
-    monitoring: MonitoringConfig,
 }
 
 impl PeerSamplingConfig {
     /// Returns a configuration with specified parameters
-    pub fn new(push: bool, pull: bool, sampling_period: u64, sampling_deviation: u64, view_size: usize, healing_factor: usize, swapping_factor: usize, monitoring_config: Option<MonitoringConfig>) -> Self {
-        let monitoring = match monitoring_config {
-            Some(config) => config,
-            None => MonitoringConfig::default(),
-        };
+    pub fn new(push: bool, pull: bool, sampling_period: u64, sampling_deviation: u64, view_size: usize, healing_factor: usize, swapping_factor: usize) -> Self {
         PeerSamplingConfig {
             push,
             pull,
@@ -41,7 +34,6 @@ impl PeerSamplingConfig {
             view_size,
             healing_factor,
             swapping_factor,
-            monitoring
         }
     }
 
@@ -71,10 +63,6 @@ impl PeerSamplingConfig {
 
     pub fn is_push(&self) -> bool {
         self.push
-    }
-
-    pub fn monitoring(&self) -> &MonitoringConfig {
-        &self.monitoring
     }
 }
 

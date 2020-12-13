@@ -26,6 +26,8 @@ pub struct PeerSamplingService {
     thread_handles: Vec<JoinHandle<()>>,
     /// Handle for shutting down threads
     shutdown: Arc<AtomicBool>,
+    /// Monitoring configuration
+    monitoring_config: MonitoringConfig,
 }
 
 impl PeerSamplingService {
@@ -34,13 +36,14 @@ impl PeerSamplingService {
     /// # Arguments
     ///
     /// * `config` - The parameters for the peer sampling protocol
-    pub fn new(address: SocketAddr, config: PeerSamplingConfig) -> PeerSamplingService {
+    pub fn new(address: SocketAddr, config: PeerSamplingConfig, monitoring_config: MonitoringConfig) -> PeerSamplingService {
         PeerSamplingService {
             address,
             view: Arc::new(Mutex::new(View::new(address.to_string()))),
             config,
             thread_handles: Vec::new(),
             shutdown: Arc::new(AtomicBool::new(false)),
+            monitoring_config,
         }
     }
 
@@ -120,16 +123,17 @@ impl PeerSamplingService {
     /// * `receiver` - The channel used for receiving incoming messages
     fn start_receiver(&self, receiver: Receiver<PeerSamplingMessage>) -> JoinHandle<()>{
         let address = self.address.to_string();
-        let config = self.config.clone();
+        let sampling_config = self.config.clone();
+        let monitoring_config = self.monitoring_config.clone();
         let view_arc = self.view.clone();
-        std::thread::Builder::new().name(format!("{} - gbps receiver", address)).spawn(move|| {
+        std::thread::Builder::new().name(format!("{} - gbps receiver", &address)).spawn(move|| {
             log::info!("Started message handling thread");
             while let Ok(message) = receiver.recv() {
                 log::debug!("Received: {:?}", message);
                 let mut view = view_arc.lock().unwrap();
                 if let message::MessageType::Request = message.message_type() {
-                    if config.is_pull() {
-                        let buffer = Self::build_buffer(address.clone(), &config, &mut view);
+                    if sampling_config.is_pull() {
+                        let buffer = Self::build_buffer(address.clone(), &sampling_config, &mut view);
                         log::debug!("Built response buffer: {:?}", buffer);
                         if let Ok(remote_address) = message.sender().parse::<SocketAddr>() {
                             match crate::network::send(&remote_address, Box::new(PeerSamplingMessage::new_response(address.clone(), Some(buffer)))) {
@@ -144,7 +148,16 @@ impl PeerSamplingService {
                 }
 
                 if let Some(buffer) = message.view() {
-                    view.select(config.view_size(), config.healing_factor(), config.swapping_factor(), &buffer, config.monitoring().clone());
+                    view.select(sampling_config.view_size(), sampling_config.healing_factor(), sampling_config.swapping_factor(), &buffer);
+
+                    // Debug and monitoring
+                    if monitoring_config.enabled() {
+                        let new_view = view.peers.iter()
+                            .map(|peer| peer.address().to_owned())
+                            .collect::<Vec<String>>();
+                        log::debug!("{}", new_view.join(", "));
+                        monitoring_config.send_peer_data(address.clone(), new_view);
+                    }
                 }
                 else {
                     log::warn!("received a response with an empty buffer");
@@ -312,7 +325,7 @@ impl View {
     /// * `h` - The healing parameter
     /// * `s` - The swap parameter
     /// * `buffer` - The view received
-    fn select(&mut self, c:usize, h: usize, s: usize, buffer: &Vec<Peer>, monitoring_config: MonitoringConfig) {
+    fn select(&mut self, c:usize, h: usize, s: usize, buffer: &Vec<Peer>) {
         let my_address = self.host_address.clone();
         // Add received peers to current view, omitting the node's own address
         buffer.iter()
@@ -325,15 +338,6 @@ impl View {
         self.remove_at_random(c);
         // Update peer queue for application layer
         self.update_queue();
-
-        // Debug and monitoring
-        let new_view = self.peers.iter()
-            .map(|peer| peer.address().to_owned())
-            .collect::<Vec<String>>();
-        log::debug!("{}", new_view.join(", "));
-        if monitoring_config.enabled() {
-            monitoring_config.send_data(&self.host_address, new_view);
-        }
     }
 
     /// Removes duplicates peers from the view and keep the most recent one

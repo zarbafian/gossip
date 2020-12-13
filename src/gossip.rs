@@ -12,6 +12,7 @@ use crate::peer::Peer;
 use crate::message::sampling::PeerSamplingMessage;
 use std::collections::HashMap;
 use std::error::Error;
+use crate::monitor::MonitoringConfig;
 
 pub struct GossipService {
     /// Address of node
@@ -25,7 +26,9 @@ pub struct GossipService {
     /// Thread handles
     activities: Vec<JoinHandle<()>>,
     /// Active updates
-    active_updates: Arc<Mutex<HashMap<String, Update>>>
+    active_updates: Arc<Mutex<HashMap<String, Update>>>,
+    /// Monitoring configuration
+    monitoring_config: MonitoringConfig,
 }
 
 impl GossipService {
@@ -35,14 +38,16 @@ impl GossipService {
     ///
     /// * `peer_sampling_config` - Configuration for peer sampling
     /// * `gossip_config` - Configuration for gossiping
-    pub fn new(address: SocketAddr, peer_sampling_config: PeerSamplingConfig, gossip_config: GossipConfig) -> GossipService {
+    pub fn new(address: SocketAddr, peer_sampling_config: PeerSamplingConfig, gossip_config: GossipConfig, monitoring_config: Option<MonitoringConfig>) -> GossipService {
+        let monitoring_config = monitoring_config.unwrap_or_default();
         GossipService{
             address,
-            peer_sampling_service: Arc::new(Mutex::new(PeerSamplingService::new(address, peer_sampling_config))),
+            peer_sampling_service: Arc::new(Mutex::new(PeerSamplingService::new(address, peer_sampling_config, monitoring_config.clone()))),
             gossip_config,
             shutdown: Arc::new(AtomicBool::new(false)),
             activities: Vec::new(),
             active_updates: Arc::new(Mutex::new(HashMap::new())),
+            monitoring_config,
         }
     }
 
@@ -121,6 +126,7 @@ impl GossipService {
     fn start_message_content_handler(&mut self, receiver: Receiver<ContentMessage>) -> Result<(), Box<dyn Error>> {
         let address = self.address.to_string();
         let active_updates_arc = Arc::clone(&self.active_updates);
+        let monitoring_config = self.monitoring_config.clone();
         let handle = std::thread::Builder::new().name(format!("{} - content receiver", address)).spawn(move|| {
             log::info!("Started message content handling thread");
             while let Ok(message) = receiver.recv() {
@@ -160,6 +166,12 @@ impl GossipService {
                                     }
                                 }
                             });
+
+                            // Monitoring
+                            if monitoring_config.enabled() {
+                                let updates = active_updates.iter().map(|(digest, _)| digest.to_owned()).collect::<Vec<String>>();
+                                monitoring_config.send_update_data(address.clone(), updates);
+                            }
                         }
                     }
                 }

@@ -25,8 +25,9 @@ fn start_gossip() {
     let listener_1 = TextMessageListener { id: address_1.to_owned() };
     let mut service_1 = GossipService::new(
         address_1.parse().unwrap(),
-        PeerSamplingConfig::new(true, true, sampling_period, sampling_deviation, 10, 1, 4, None),
-        GossipConfig::new(true, true, address_1.parse().unwrap(), 2000)
+        PeerSamplingConfig::new(true, true, sampling_period, sampling_deviation, 10, 1, 4),
+        GossipConfig::new(true, true, address_1.parse().unwrap(), 2000),
+        None
     );
     service_1.start(Box::new( || None));
 
@@ -34,8 +35,9 @@ fn start_gossip() {
     let listener_2 = TextMessageListener { id: address_2.to_owned() };
     let mut service_2 = GossipService::new(
         address_2.parse().unwrap(),
-        PeerSamplingConfig::new(true, true, sampling_period, sampling_deviation, 10, 1, 4, None),
-        GossipConfig::new(true, true,address_2.parse().unwrap(), 60000)
+        PeerSamplingConfig::new(true, true, sampling_period, sampling_deviation, 10, 1, 4),
+        GossipConfig::new(true, true,address_2.parse().unwrap(), 60000),
+        None
     );
     service_2.start(Box::new(move || Some(vec![Peer::new(address_1.to_owned())])));
 

@@ -8,8 +8,10 @@ pub struct MonitoringConfig {
     enabled: bool,
     /// Monitoring host
     host: String,
-    /// URL context
-    context: String,
+    /// Peer URL endpoint
+    peer_path: String,
+    /// Updates URL endpoint
+    update_path: String,
 }
 
 impl MonitoringConfig {
@@ -19,22 +21,12 @@ impl MonitoringConfig {
     ///
     /// * `enabled` - Share monitoring data
     /// * `url` - URL of monitoring host
-    pub fn new(enabled: bool, url: &str) -> MonitoringConfig {
-        // remove leading protocol
-        let protocol_removed = if url.starts_with("http://") {
-            &url[7..] }
-        else {
-            url
-        };
-        // separate host and context
-        let (host, context) = match protocol_removed.find("/") {
-            Some(index) => (&protocol_removed[..index], &protocol_removed[index..]),
-            None => (url, "/")
-        };
+    pub fn new(enabled: bool, host: String, peer_path: String, update_path: String) -> MonitoringConfig {
         MonitoringConfig {
             enabled,
-            host: host.to_owned(),
-            context: context.to_owned(),
+            host,
+            peer_path,
+            update_path,
         }
     }
 
@@ -42,42 +34,66 @@ impl MonitoringConfig {
         self.enabled
     }
 
-    /// Send monitoring data
+    /// Send monitoring data of peers
     ///
     /// # Arguments
     ///
     /// * `pid` - Identifier of sending process
     /// * `peers` - List of peers in the view of the process
-    pub fn send_data(&self, pid: &str, peers: Vec<String>) {
-        let pid = pid.to_owned();
+    pub fn send_peer_data(&self, pid: String, peers: Vec<String>) {
         let host = self.host.clone();
-        let context = self.context.clone();
+        let path = self.peer_path.clone();
         std::thread::spawn(move || {
             let peers_str = peers.iter()
                 .map(|peer| format!("\"{}\"", peer))
                 .collect::<Vec<String>>().join(",");
-            let json = format!(
-                "{{\
+            let json = format!("{{\
                 \"id\":\"{}\",\
                 \"peers\":[{}],\
                 \"messages\":[{}]\
             }}", pid, peers_str, "");
-            //println!("send_data:\n{}", json);
-            match MonitoringConfig::post(&host, &context, json) {
-                Ok(()) => log::debug!("Peer {}: monitoring data sent", pid),
-                Err(e) => log::warn!("Peer {} could not send monitoring data to {}: {}", pid, host, e),
+            log::trace!("send_data:\n{}", json);
+            match MonitoringConfig::post(&host, &path, json) {
+                Ok(()) => log::trace!("Peer {}: peer monitoring data sent", pid),
+                Err(e) => log::warn!("Peer {} peer could not send monitoring data to {}: {}", pid, host, e),
             }
         });
     }
 
-    fn post(host: &str, context: &str, json: String) -> std::io::Result<()> {
+    /// Send monitoring data of updates
+    ///
+    /// # Arguments
+    ///
+    /// * `pid` - Identifier of sending process
+    /// * `updates` - List of updates the process has received
+    pub fn send_update_data(&self, pid: String, updates: Vec<String>) {
+        let host = self.host.clone();
+        let path = self.peer_path.clone();
+        std::thread::spawn(move || {
+            let updates_str = updates.iter()
+                .map(|update| format!("\"{}\"", update))
+                .collect::<Vec<String>>().join(",");
+            let json = format!("{{\
+                \"id\":\"{}\",\
+                \"peers\":[{}],\
+                \"messages\":[{}]\
+            }}", pid, "", updates_str);
+            log::trace!("send_data:\n{}", json);
+            match MonitoringConfig::post(&host, &path, json) {
+                Ok(()) => log::trace!("Peer {}: update monitoring data sent", pid),
+                Err(e) => log::warn!("Peer {} could not send update monitoring data to {}: {}", pid, host, e),
+            }
+        });
+    }
+
+    fn post(host: &str, path: &str, json: String) -> std::io::Result<()> {
 
         let bytes = json.as_bytes();
 
         let mut stream = std::net::TcpStream::connect(host)?;
 
         let mut request_data = String::new();
-        request_data.push_str(&format!("POST {} HTTP/1.1", context));
+        request_data.push_str(&format!("POST {} HTTP/1.1", path));
         request_data.push_str("\r\n");
         request_data.push_str(&format!("Host: {}", host));
         request_data.push_str("\r\n");
@@ -111,7 +127,8 @@ impl Default for MonitoringConfig {
         MonitoringConfig {
             enabled: false,
             host: "".to_string(),
-            context: "".to_string(),
+            peer_path: "".to_string(),
+            update_path: "".to_string(),
         }
     }
 }
