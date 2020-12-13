@@ -50,7 +50,7 @@ pub fn listen(address: &SocketAddr, shutdown: Arc<std::sync::atomic::AtomicBool>
                         Ok(read) => {
                             if read > 0 {
                                 match handle_message(buf, &peer_sampling_sender, &header_sender, &content_sender) {
-                                    Ok(()) => log::debug!("Message parsed successfully"),
+                                    Ok(()) => log::trace!("Message parsed successfully"),
                                     Err(e) => log::error!("{:?}", e),
                                 }
                             }

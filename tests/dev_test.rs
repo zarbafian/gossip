@@ -56,6 +56,6 @@ fn start_gossip() {
     // wait for gossip
     std::thread::sleep(std::time::Duration::from_secs(5));
 
-    service_1.shutdown().unwrap();
-    service_2.shutdown().unwrap();
+    service_1.shutdown();
+    service_2.shutdown();
 }

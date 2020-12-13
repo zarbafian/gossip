@@ -133,7 +133,7 @@ impl PeerSamplingService {
                         log::debug!("Built response buffer: {:?}", buffer);
                         if let Ok(remote_address) = message.sender().parse::<SocketAddr>() {
                             match crate::network::send(&remote_address, Box::new(PeerSamplingMessage::new_response(address.clone(), Some(buffer)))) {
-                                Ok(written) => log::debug!("Buffer sent successfully ({} bytes)", written),
+                                Ok(written) => log::trace!("Buffer sent successfully ({} bytes)", written),
                                 Err(e) => log::error!("Error sending buffer: {}", e),
                             }
                         }
@@ -172,7 +172,6 @@ impl PeerSamplingService {
                 let sleep_time = config.sampling_period() * 1000 + deviation;
                 std::thread::sleep(std::time::Duration::from_millis(sleep_time));
 
-                log::debug!("Sampling peers");
                 let mut view = view_arc.lock().unwrap();
                 if let Some(peer) = view.select_peer() {
                     if config.is_push() {
@@ -180,7 +179,7 @@ impl PeerSamplingService {
                         // send local view
                         if let Ok(remote_address) = &peer.address().parse::<SocketAddr>() {
                             match crate::network::send(remote_address, Box::new(PeerSamplingMessage::new_request(address.clone(), Some(buffer)))) {
-                                Ok(written) => log::debug!("Buffer sent successfully ({} bytes)", written),
+                                Ok(written) => log::trace!("Buffer sent successfully ({} bytes)", written),
                                 Err(e) => log::error!("Error sending buffer: {}", e),
                             }
                         }
@@ -192,7 +191,7 @@ impl PeerSamplingService {
                         // send empty view to trigger response
                         if let Ok(remote_address) = &peer.address().parse::<SocketAddr>() {
                             match crate::network::send(remote_address, Box::new(PeerSamplingMessage::new_request(address.clone(), None))) {
-                                Ok(written) => log::debug!("Empty view sent successfully ({} bytes)", written),
+                                Ok(written) => log::trace!("Empty view sent successfully ({} bytes)", written),
                                 Err(e) => log::error!("Error sending empty view: {}", e),
                             }
                         }

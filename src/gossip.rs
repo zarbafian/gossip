@@ -85,7 +85,7 @@ impl GossipService {
                         active_updates.iter()
                             .for_each(|(digest, _)| message.push(digest.to_owned()));
                         match crate::network::send(&sender_address, Box::new(message)) {
-                            Ok(written) => log::debug!("Sent header response - {} bytes to {:?}", written, sender_address),
+                            Ok(written) => log::trace!("Sent header response - {} bytes to {:?}", written, sender_address),
                             Err(e) => log::error!("Error sending header response: {:?}", e)
                         }
                     }
@@ -98,13 +98,13 @@ impl GossipService {
                             digests.insert(digest.to_owned(), vec![]);
                         }
                         else {
-                            log::debug!("Duplicate digest: {}", digest);
+                            log::trace!("Duplicate digest: {}", digest);
                         }
                     });
                     if digests.len() > 0 {
                         let message = ContentMessage::new_request(address.clone(), digests);
                         match crate::network::send(&sender_address, Box::new(message)) {
-                            Ok(written) => log::debug!("Sent content request - {} bytes to {:?}", written, sender_address),
+                            Ok(written) => log::trace!("Sent content request - {} bytes to {:?}", written, sender_address),
                             Err(e) => log::error!("Error content request response: {:?}", e)
                         }
                     }
@@ -139,7 +139,7 @@ impl GossipService {
                                 });
                                 let message = ContentMessage::new_response(address.clone(), map);
                                 match crate::network::send(&peer_address, Box::new(message)) {
-                                    Ok(written) => log::debug!("Sent content response - {} bytes to {:?}", written, peer_address),
+                                    Ok(written) => log::trace!("Sent content response - {} bytes to {:?}", written, peer_address),
                                     Err(e) => log::error!("Error content response: {:?}", e)
                                 }
                             }
@@ -208,7 +208,7 @@ impl GossipService {
                             // send empty headers to trigger response
                         }
                         match crate::network::send(&peer_address, Box::new(message)) {
-                            Ok(written) => log::debug!("Sent header request - {} bytes to {:?}", written, peer_address),
+                            Ok(written) => log::trace!("Sent header request - {} bytes to {:?}", written, peer_address),
                             Err(e) => log::error!("Error sending header request: {:?}", e)
                         }
                     }
