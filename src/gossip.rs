@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::net::SocketAddr;
 use std::sync::mpsc::{Sender, Receiver};
-use crate::config::GossipConfig;
+use crate::config::{GossipConfig, UpdateExpiration};
 use crate::PeerSamplingConfig;
 use crate::sampling::PeerSamplingService;
 use crate::message::gossip::{Update, UpdateHandler, HeaderMessage, ContentMessage};
@@ -27,9 +27,7 @@ pub struct GossipService<T> {
     /// Thread handles
     activities: Vec<JoinHandle<()>>,
     /// Active updates
-    active_updates: Arc<Mutex<HashMap<String, Update>>>,
-    /// Strategy for
-    forget_strategy: u64,
+    active_updates: Arc<Mutex<HashMap<String, (Update, UpdateExpiration)>>>,
     /// Application callback for handling updates
     update_callback: Arc<Mutex<Option<Box<T>>>>,
     /// Monitoring configuration
@@ -54,7 +52,6 @@ where T: UpdateHandler + 'static + Send
             shutdown: Arc::new(AtomicBool::new(false)),
             activities: Vec::new(),
             active_updates: Arc::new(Mutex::new(HashMap::new())),
-            forget_strategy: 0,
             update_callback: Arc::new(Mutex::new(None)),
             monitoring_config,
         }
@@ -143,6 +140,7 @@ where T: UpdateHandler + 'static + Send
         let address = self.address.to_string();
         let active_updates_arc = Arc::clone(&self.active_updates);
         let update_callback_arc = Arc::clone(&self.update_callback);
+        let update_expiration = self.gossip_config.update_expiration().clone();
         let monitoring_config = self.monitoring_config.clone();
         let handle = std::thread::Builder::new().name(format!("{} - content receiver", address)).spawn(move|| {
             log::info!("Started message content handling thread");
@@ -156,7 +154,7 @@ where T: UpdateHandler + 'static + Send
                             if active_updates.len() > 0 {
                                 let mut map = HashMap::new();
                                 message.content().iter().for_each(|(digest, _)| {
-                                    if let Some(update) = active_updates.get(digest) {
+                                    if let Some((update, _)) = active_updates.get(digest) {
                                         map.insert(digest.to_owned(), update.content().to_vec());
                                     }
                                 });
@@ -175,7 +173,7 @@ where T: UpdateHandler + 'static + Send
                                 if !active_updates.contains_key(digest) {
                                     let update = Update::new(content.clone());
                                     if digest == update.digest() {
-                                        active_updates.insert(digest.to_owned(), update);
+                                        active_updates.insert(digest.to_owned(), (update, update_expiration.clone()));
                                         log::debug!("Added update with digest {}", digest);
                                         let mutex = update_callback_arc.lock().unwrap();
                                         if let Some(callback) = mutex.as_ref() {
@@ -236,10 +234,25 @@ where T: UpdateHandler + 'static + Send
                         let mut message = HeaderMessage::new_request(node_address.to_string());
                         if push {
                             // send active headers
-                            let active_updates = active_updates_arc.lock().unwrap();
+                            let mut active_updates = active_updates_arc.lock().unwrap();
+                            let mut expired_updates = Vec::new();
                             if active_updates.len() > 0 {
                                 active_updates.iter()
-                                    .for_each(|(digest, _)| message.push(digest.to_owned()));
+                                    .for_each(|(digest, (_, expiration))| {
+                                        match expiration {
+                                            UpdateExpiration::Count(mut remaining) => {
+                                                message.push(digest.to_owned());
+                                                remaining -= 1;
+                                                if remaining == 0 {
+                                                    expired_updates.push(digest.clone());
+                                                }
+                                            }
+                                            _ => unimplemented!()
+                                        }
+                                    });
+                                expired_updates.iter().for_each(|digest| {
+                                    active_updates.remove(digest);
+                                });
                             }
                         }
                         else {
@@ -276,8 +289,7 @@ where T: UpdateHandler + 'static + Send
             Err("Message already active")?
         }
         else {
-            active_updates.insert(update.digest().to_owned(), update);
-            // TODO: store actual content
+            active_updates.insert(update.digest().to_owned(), (update, self.gossip_config.update_expiration().clone()));
             Ok(())
         }
     }

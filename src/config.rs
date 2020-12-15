@@ -92,16 +92,19 @@ pub struct GossipConfig {
     /// Maximum value of random deviation added to the gossip interval.
     /// Intended for local testing.
     gossip_deviation: u64,
+    /// Strategy for update expiration
+    update_expiration: UpdateExpiration,
 }
 
 impl GossipConfig {
-    pub fn new(push: bool, pull: bool, address: SocketAddr, gossip_interval: u64, gossip_deviation: u64) -> Self {
+    pub fn new(push: bool, pull: bool, address: SocketAddr, gossip_interval: u64, gossip_deviation: u64, update_expiration: UpdateExpiration) -> Self {
         GossipConfig {
             push,
             pull,
             address,
             gossip_interval,
             gossip_deviation,
+            update_expiration,
         }
     }
     pub fn is_push(&self) -> bool {
@@ -119,4 +122,13 @@ impl GossipConfig {
     pub fn gossip_deviation(&self) -> u64 {
         self.gossip_deviation
     }
+    pub fn update_expiration(&self) -> &UpdateExpiration {
+        &self.update_expiration
+    }
+}
+
+#[derive(Clone)]
+pub enum UpdateExpiration {
+    DurationMillis(u64),
+    Count(u64),
 }

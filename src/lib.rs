@@ -6,7 +6,7 @@ mod config;
 mod network;
 mod gossip;
 
-pub use crate::config::{PeerSamplingConfig, GossipConfig};
+pub use crate::config::{PeerSamplingConfig, GossipConfig, UpdateExpiration};
 pub use crate::monitor::MonitoringConfig;
 pub use crate::peer::Peer;
 pub use crate::message::gossip::{Update, UpdateHandler};
