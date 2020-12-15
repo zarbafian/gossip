@@ -2,6 +2,7 @@ use serde::{Serialize, Deserialize};
 use crate::message::{Message, MESSAGE_PROTOCOL_HEADER_MESSAGE, MESSAGE_PROTOCOL_CONTENT_MESSAGE, MessageType};
 use std::collections::HashMap;
 
+/// A message containing the digests of all the active updates of the node; it is used to advertise the updates present at each node
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HeaderMessage {
     sender: String,
@@ -41,6 +42,8 @@ impl Message for HeaderMessage {
     }
 }
 
+/// A message containing the updates.
+/// A [MessageType::Request] is used to query for updates, a [MessageType::Response] is used to send updates.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ContentMessage {
     sender: String,
@@ -87,12 +90,12 @@ pub struct Update {
 }
 
 impl Update {
-    /// Creates a new message with a generic content
+    /// Creates a new message with generic content
     ///
     /// # Arguments
     ///
-    /// `content` - Message content
-    /// `digest` - Content digest
+    /// * `content` - Message content
+    /// * `digest` - Content digest
     pub fn new(content: Vec<u8>) -> Self {
         let digest = blake3::hash(&content).to_hex().to_string();
         Update {
@@ -110,7 +113,14 @@ impl Update {
     }
 }
 
-/// Trait for receiving updates from the gossip protocol
+/// Trait for receiving updates from the gossip protocol.
+///
+/// See: [Update]
 pub trait UpdateHandler {
+    /// Method called every time a new update is available for the application layer
+    ///
+    /// # Arguments
+    ///
+    /// * `update` - The update that has been received
     fn on_update(&self, update: Update);
 }

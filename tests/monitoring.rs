@@ -1,3 +1,5 @@
+use gossip::UpdateExpirationMode;
+
 mod common;
 
 #[test]
@@ -11,8 +13,8 @@ fn peer_sampling_smoke_test() {
     let gossip_period = 400;
     let gossip_deviation = 400;
 
-    let sampling_period = 2;
-    let sampling_deviation = 2;
+    let sampling_period = 2000;
+    let sampling_deviation = 2000;
     let push = true;
     let pull = true;
     let t = 5;
@@ -23,7 +25,7 @@ fn peer_sampling_smoke_test() {
 
     let monitoring_config = MonitoringConfig::new(true, "127.0.0.1:8080".to_owned(), "/peers".to_owned(), "/updates".to_owned());
 
-    let peers_per_protocol = 40;
+    let peers_per_protocol = 20;
     let mut instances = vec![];
 
     // create first peer with no contact peer
@@ -34,16 +36,17 @@ fn peer_sampling_smoke_test() {
     // create and initiate the peer sampling service
     let mut service = GossipService::new(
         init_address.parse().unwrap(),
-        PeerSamplingConfig::new_with_params(true, true, sampling_period, sampling_deviation, c, h, c),
-        GossipConfig::new(true, true, init_address.parse().unwrap(), gossip_period, gossip_deviation),
+        PeerSamplingConfig::new_with_deviation(true, true, sampling_period, sampling_deviation, c, h, c),
+        GossipConfig::new_with_deviation(true, true, init_address.parse().unwrap(), gossip_period, gossip_deviation),
         Some(monitoring_config.clone())
     );
     service.start(no_peer_handler);
     instances.push(service);
 
-    // create peers using IPv4 addresses
     let mut port = 9001;
-    for _ in 1..peers_per_protocol {
+
+    // create peers using IPv4 addresses
+    for _ in 0..peers_per_protocol {
         // peer socket address
         let address = format!("127.0.0.1:{}", port);
         // closure for retrieving the address of the first contact peer
@@ -52,8 +55,8 @@ fn peer_sampling_smoke_test() {
         // create and initiate the gossip service
         let mut ipv4_service = GossipService::new(
             address.parse().unwrap(),
-            PeerSamplingConfig::new_with_params(true, true, sampling_period, sampling_deviation, c, h, c),
-            GossipConfig::new(true, true, address.parse().unwrap(), gossip_period, gossip_deviation),
+            PeerSamplingConfig::new_with_deviation(push, pull, sampling_period, sampling_deviation, c, h, c),
+            GossipConfig::new_with_deviation(push, pull, gossip_period, gossip_deviation, UpdateExpirationMode::None),
             Some(monitoring_config.clone())
         );
         ipv4_service.start(init_handler);
@@ -61,29 +64,32 @@ fn peer_sampling_smoke_test() {
 
         port += 1;
     }
-/*
+
     // create peers using IPv6 addresses
-    for _ in 1..peers_per_protocol {
+    for _ in 0..peers_per_protocol {
         // peer socket address
         let address = format!("[::1]:{}", port);
-        // configuration
-        let config = Config::new(address.parse().unwrap(), push, pull, t, d, c, h, s, Some(monitoring_config.clone()));
         // closure for retrieving the address of the first contact peer
         let init_handler = Box::new(move|| { Some(vec![Peer::new(init_address.to_owned())]) });
 
-        // create and initiate the peer sampling service
-        let mut ipv6_service = PeerSamplingService::new(config);
-        ipv6_service.init(init_handler);
+        // create and initiate the gossip service
+        let mut ipv6_service = GossipService::new(
+            address.parse().unwrap(),
+            PeerSamplingConfig::new_with_deviation(push, pull, sampling_period, sampling_deviation, c, h, c),
+            GossipConfig::new_with_deviation(push, pull, gossip_period, gossip_deviation, UpdateExpirationMode::None),
+            Some(monitoring_config.clone())
+        );
+        ipv6_service.start(init_handler);
         instances.push(ipv6_service);
 
         port += 1;
     }
-*/
+
     std::thread::sleep(std::time::Duration::from_secs(11));
 
     for i in 0..40 {
         let selected_peer = rand::thread_rng().gen_range(0, instances.len());
-        instances[selected_peer].submit(format!("MSGID {}", i).as_bytes().to_vec());
+        instances[selected_peer].submit(format!("MSG_ID_{}", i).as_bytes().to_vec());
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
 

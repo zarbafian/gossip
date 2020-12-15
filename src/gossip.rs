@@ -3,20 +3,20 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::net::SocketAddr;
 use std::sync::mpsc::{Sender, Receiver};
-use crate::config::{GossipConfig, UpdateExpiration};
+use std::collections::HashMap;
+use std::error::Error;
+use rand::Rng;
+use crate::config::{GossipConfig, UpdateExpirationValue};
 use crate::PeerSamplingConfig;
 use crate::sampling::PeerSamplingService;
 use crate::message::gossip::{Update, UpdateHandler, HeaderMessage, ContentMessage};
 use crate::message::{NoopMessage, MessageType};
 use crate::peer::Peer;
 use crate::message::sampling::PeerSamplingMessage;
-use std::collections::HashMap;
-use std::error::Error;
 use crate::monitor::MonitoringConfig;
-use rand::Rng;
 
 pub struct GossipService<T> {
-    /// Address of node
+    /// Socket address of the node
     address: SocketAddr,
     /// Peer sampling service
     peer_sampling_service: Arc<Mutex<PeerSamplingService>>,
@@ -27,9 +27,11 @@ pub struct GossipService<T> {
     /// Thread handles
     activities: Vec<JoinHandle<()>>,
     /// Active updates
-    active_updates: Arc<Mutex<HashMap<String, (Update, UpdateExpiration)>>>,
-    /// Application callback for handling updates
-    update_callback: Arc<Mutex<Option<Box<T>>>>,
+    active_updates: Arc<Mutex<HashMap<String, (Update, UpdateExpirationValue)>>>,
+    /// Removed/expired updates
+    removed_updates: Arc<Mutex<Vec<String>>>,
+    /// Application callback for receiving new updates
+    update_handler: Arc<Mutex<Option<Box<T>>>>,
     /// Monitoring configuration
     monitoring_config: MonitoringConfig,
 }
@@ -41,8 +43,10 @@ where T: UpdateHandler + 'static + Send
     ///
     /// # Arguments
     ///
-    /// * `peer_sampling_config` - Configuration for peer sampling
-    /// * `gossip_config` - Configuration for gossiping
+    /// * `address` - Socket address of the node
+    /// * `peer_sampling_config` - Configuration for peer sampling, see [PeerSamplingConfig]
+    /// * `gossip_config` - Configuration for gossiping, see [GossipConfig]
+    /// * `monitoring_config` - Configuration for monitoring, see [MonitoringConfig]
     pub fn new(address: SocketAddr, peer_sampling_config: PeerSamplingConfig, gossip_config: GossipConfig, monitoring_config: Option<MonitoringConfig>) -> GossipService<T> {
         let monitoring_config = monitoring_config.unwrap_or_default();
         GossipService{
@@ -52,7 +56,8 @@ where T: UpdateHandler + 'static + Send
             shutdown: Arc::new(AtomicBool::new(false)),
             activities: Vec::new(),
             active_updates: Arc::new(Mutex::new(HashMap::new())),
-            update_callback: Arc::new(Mutex::new(None)),
+            removed_updates: Arc::new(Mutex::new(Vec::new())),
+            update_handler: Arc::new(Mutex::new(None)),
             monitoring_config,
         }
     }
@@ -61,10 +66,15 @@ where T: UpdateHandler + 'static + Send
         &self.address
     }
 
-    /// Start gossiping-related activities
-    pub fn start(&mut self, peer_sampling_init: Box<dyn FnOnce() -> Option<Vec<Peer>>>, update_callback: Box<T>) -> Result<(), Box<dyn Error>> {
+    /// Starts the gossip protocol and related threads
+    ///
+    /// # Arguments
+    ///
+    /// * `peer_sampling_init` - Closure for retrieving the address of the first peer to contact
+    /// * `update_handler` - Application callback for receiving new updates
+    pub fn start(&mut self, peer_sampling_init: Box<dyn FnOnce() -> Option<Vec<Peer>>>, update_handler: Box<T>) -> Result<(), Box<dyn Error>> {
 
-        self.update_callback.lock().unwrap().replace(update_callback);
+        self.update_handler.lock().unwrap().replace(update_handler);
 
         // start peer sampling
         let (tx_sampling, rx_sampling) = std::sync::mpsc::channel::<PeerSamplingMessage>();
@@ -89,6 +99,7 @@ where T: UpdateHandler + 'static + Send
         let pull = self.gossip_config.is_pull();
         let address = self.address.to_string();
         let active_updates_arc = Arc::clone(&self.active_updates);
+        let removed_updates_arc = Arc::clone(&self.removed_updates);
         let handle = std::thread::Builder::new().name(format!("{} - header receiver", address)).spawn(move|| {
             log::info!("Started message header handling thread");
             while let Ok(message) = receiver.recv() {
@@ -96,6 +107,7 @@ where T: UpdateHandler + 'static + Send
                 if let Ok(sender_address) = message.sender().parse::<SocketAddr>() {
 
                     let active_updates = active_updates_arc.lock().unwrap();
+                    let removed_updates = removed_updates_arc.lock().unwrap();
 
                     // Response with message headers
                     if pull && active_updates.len() > 0 && *message.message_type() == MessageType::Request {
@@ -111,7 +123,7 @@ where T: UpdateHandler + 'static + Send
                     // Process received headers
                     let mut digests = HashMap::new();
                     message.messages().iter().for_each(|digest| {
-                        if !active_updates.contains_key(digest) {
+                        if !active_updates.contains_key(digest) && !removed_updates.contains(digest){
                             log::debug!("New digest: {}", digest);
                             digests.insert(digest.to_owned(), vec![]);
                         }
@@ -139,7 +151,8 @@ where T: UpdateHandler + 'static + Send
     fn start_message_content_handler(&mut self, receiver: Receiver<ContentMessage>) -> Result<(), Box<dyn Error>> {
         let address = self.address.to_string();
         let active_updates_arc = Arc::clone(&self.active_updates);
-        let update_callback_arc = Arc::clone(&self.update_callback);
+        let removed_updates_arc = Arc::clone(&self.removed_updates);
+        let update_callback_arc = Arc::clone(&self.update_handler);
         let update_expiration = self.gossip_config.update_expiration().clone();
         let monitoring_config = self.monitoring_config.clone();
         let handle = std::thread::Builder::new().name(format!("{} - content receiver", address)).spawn(move|| {
@@ -169,12 +182,13 @@ where T: UpdateHandler + 'static + Send
                     MessageType::Response => {
                         if message.content().len() > 0 {
                             let mut active_updates = active_updates_arc.lock().unwrap();
+                            let removed_updates = removed_updates_arc.lock().unwrap();
                             message.content().iter().for_each(|(digest, content)| {
-                                if !active_updates.contains_key(digest) {
+                                if !active_updates.contains_key(digest) && !removed_updates.contains(digest) {
                                     let update = Update::new(content.clone());
                                     if digest == update.digest() {
-                                        active_updates.insert(digest.to_owned(), (update, update_expiration.clone()));
-                                        log::debug!("Added update with digest {}", digest);
+                                        log::info!("New update received: {}", update.digest());
+                                        active_updates.insert(digest.to_owned(), (update, UpdateExpirationValue::new(update_expiration.clone())));
                                         let mutex = update_callback_arc.lock().unwrap();
                                         if let Some(callback) = mutex.as_ref() {
                                             let update_app = Update::new(content.clone());
@@ -204,7 +218,7 @@ where T: UpdateHandler + 'static + Send
     }
 
     fn start_network_listener(&mut self, peer_sampling_sender: Sender<PeerSamplingMessage>, header_sender: Sender<HeaderMessage>, content_sender: Sender<ContentMessage>) -> Result<(), Box<dyn Error>> {
-        let handle = crate::network::listen(self.gossip_config.address(), Arc::clone(&self.shutdown), peer_sampling_sender, header_sender, content_sender)?;
+        let handle = crate::network::listen(self.address(), Arc::clone(&self.shutdown), peer_sampling_sender, header_sender, content_sender)?;
         self.activities.push(handle);
         Ok(())
     }
@@ -217,7 +231,8 @@ where T: UpdateHandler + 'static + Send
         let gossip_deviation = self.gossip_config.gossip_deviation();
         let peer_sampling_arc = Arc::clone(&self.peer_sampling_service);
         let active_updates_arc = Arc::clone(&self.active_updates);
-        let handle = std::thread::Builder::new().name(format!("{} - gossip activity", self.gossip_config.address().to_string())).spawn(move ||{
+        let removed_updates_arc = Arc::clone(&self.removed_updates);
+        let handle = std::thread::Builder::new().name(format!("{} - gossip activity", self.address().to_string())).spawn(move ||{
             log::info!("Gossip thread started");
             loop {
                 if shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
@@ -235,29 +250,34 @@ where T: UpdateHandler + 'static + Send
                         if push {
                             // send active headers
                             let mut active_updates = active_updates_arc.lock().unwrap();
-                            let mut expired_updates = Vec::new();
+                            let mut removed_updates = removed_updates_arc.lock().unwrap();
+                            let mut local_expired_updates = Vec::new();
+
                             if active_updates.len() > 0 {
-                                active_updates.iter()
-                                    .for_each(|(digest, (_, expiration))| {
-                                        match expiration {
-                                            UpdateExpiration::Count(mut remaining) => {
-                                                message.push(digest.to_owned());
-                                                remaining -= 1;
-                                                if remaining == 0 {
-                                                    expired_updates.push(digest.clone());
-                                                }
-                                            }
-                                            _ => unimplemented!()
+                                active_updates.iter_mut()
+                                    .for_each(|(digest, (_, expiration_value))| {
+                                        // gossip the update
+                                        message.push(digest.to_owned());
+                                        // check for expiration
+                                        expiration_value.increase_age();
+                                        if expiration_value.has_expired() {
+                                            log::info!("Update expired: {}", digest);
+                                            local_expired_updates.push(digest.clone());
                                         }
                                     });
-                                expired_updates.iter().for_each(|digest| {
+
+                                local_expired_updates.iter().for_each(|digest| {
                                     active_updates.remove(digest);
+                                    removed_updates.push(digest.to_owned());
                                 });
                             }
                         }
                         else {
                             // send empty headers to trigger response
                         }
+
+                        log::debug!("Will send header request with {:?}", message.messages());
+
                         match crate::network::send(&peer_address, Box::new(message)) {
                             Ok(written) => log::trace!("Sent header request - {} bytes to {:?}", written, peer_address),
                             Err(e) => log::error!("Error sending header request: {:?}", e)
@@ -280,26 +300,30 @@ where T: UpdateHandler + 'static + Send
     ///
     /// # Arguments
     ///
-    /// `message_id` - A unique identifier for the message
-    /// `bytes` - Content of the message.
+    /// * `bytes` - Content of the message
     pub fn submit(&self, bytes: Vec<u8>) -> Result<(), Box<dyn Error>> {
         let update = Update::new(bytes);
         let mut active_updates = self.active_updates.lock().unwrap();
+        let removed_updates = self.removed_updates.lock().unwrap();
         if active_updates.contains_key(update.digest()) {
             Err("Message already active")?
         }
+        else if removed_updates.contains(update.digest()) {
+            Err("Submitted expired message")?
+        }
         else {
-            active_updates.insert(update.digest().to_owned(), (update, self.gossip_config.update_expiration().clone()));
+            log::info!("New update for submission: {}", update.digest());
+            active_updates.insert(update.digest().to_owned(), (update, UpdateExpirationValue::new(self.gossip_config.update_expiration().clone())));
             Ok(())
         }
     }
 
-    /// Terminate gossiping-related activities
+    /// Terminates the gossip protocol and related threads
     pub fn shutdown(&mut self) -> Result<(), Box<dyn Error>> {
-        self.update_callback.lock().unwrap().take();
+        self.update_handler.lock().unwrap().take();
         self.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
         log::info!("Shutdown requested");
-        if let Ok(_) = crate::network::send(self.gossip_config.address(), Box::new(NoopMessage)) {
+        if let Ok(_) = crate::network::send(self.address(), Box::new(NoopMessage)) {
             // shutdown request sent
         }
         let mut error = false;

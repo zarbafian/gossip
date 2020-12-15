@@ -1,4 +1,4 @@
-use gossip::{Update, UpdateHandler, UpdateExpiration};
+use gossip::{Update, UpdateHandler, UpdateExpirationMode};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -46,7 +46,7 @@ fn all_updates_received() {
     let h = 1;
     let s = 2;
 
-    let update_expiration = UpdateExpiration::Count(2);
+    let update_expiration = UpdateExpirationMode::PushCount(2);
 
     let monitoring_config = MonitoringConfig::new(true, "127.0.0.1:8080".to_owned(), "/peers".to_owned(), "/updates".to_owned());
 
@@ -61,8 +61,8 @@ fn all_updates_received() {
     // create and initiate the peer sampling service
     let mut service = GossipService::new(
         init_peer.parse().unwrap(),
-        PeerSamplingConfig::new_with_params(push, pull, sampling_period, sampling_deviation, c, h, c),
-        GossipConfig::new(push, pull, init_peer.parse().unwrap(), gossip_period, gossip_deviation, update_expiration.clone()),
+        PeerSamplingConfig::new_with_deviation(push, pull, sampling_period, sampling_deviation, c, h, c),
+        GossipConfig::new_with_deviation(push, pull, init_peer.parse().unwrap(), gossip_period, gossip_deviation, update_expiration.clone()),
         Some(monitoring_config.clone())
     );
     service.start(no_peer_handler, Box::new(MapUpdatingListener::new(init_peer.to_owned(), Arc::clone(&peer_messages))));
@@ -78,8 +78,8 @@ fn all_updates_received() {
         // create and initiate the gossip service
         let mut ipv4_service = GossipService::new(
             address.parse().unwrap(),
-            PeerSamplingConfig::new_with_params(push, pull, sampling_period, sampling_deviation, c, h, c),
-            GossipConfig::new(push, pull, address.parse().unwrap(), gossip_period, gossip_deviation, update_expiration.clone()),
+            PeerSamplingConfig::new_with_deviation(push, pull, sampling_period, sampling_deviation, c, h, c),
+            GossipConfig::new_with_deviation(push, pull, address.parse().unwrap(), gossip_period, gossip_deviation, update_expiration.clone()),
             Some(monitoring_config.clone())
         );
         ipv4_service.start(init_handler, Box::new(MapUpdatingListener::new(address.clone(), Arc::clone(&peer_messages))));

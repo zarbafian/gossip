@@ -1,34 +1,32 @@
-use std::net::SocketAddr;
-
 /// The peer sampling parameters
 ///
-/// See: https://infoscience.epfl.ch/record/109297/files/all.pdf
+/// See: [Gossip-based Peer Sampling](https://infoscience.epfl.ch/record/109297/files/all.pdf)
 #[derive(Clone)]
 pub struct PeerSamplingConfig {
-    /// Does the node push its view to other peers
     push: bool,
-    /// When active, if the node will pull views from other peers
-    /// When passive, if it responds with its view to pull from other peers
     pull: bool,
-    /// The interval between each cycle of push/pull
     sampling_period: u64,
-    /// Maximum value of random deviation added to the sampling interval.
-    /// Intended for local testing.
     sampling_deviation: u64,
-    /// The number of peers in the node's view
     view_size: usize,
-    /// The number of removal at each cycle
     healing_factor: usize,
-    /// The number of peer swapped at each cycle
     swapping_factor: usize,
 }
 
 impl PeerSamplingConfig {
-    /// Returns a configuration with all specified parameters
-    pub fn new(sampling_period: u64, view_size: usize, healing_factor: usize, swapping_factor: usize) -> Self {
+    /// Create a new peer sampling configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `push` - Does the node push its view to other peers
+    /// * `pull` - When active, if the node will pull views from other peers; when passive, if it responds with its view to push requests
+    /// * `sampling_period` - The interval between each cycle of push/pull
+    /// * `view_size` - The number of peers in the view of the node
+    /// * `healing_factor` - The number of removal at each cycle
+    /// * `swapping_factor` - The number of peer swapped at each cycle
+    pub fn new(push: bool, pull: bool, sampling_period: u64, view_size: usize, healing_factor: usize, swapping_factor: usize) -> Self {
         PeerSamplingConfig {
-            push: true,
-            pull: true,
+            push,
+            pull,
             sampling_period,
             sampling_deviation: 0,
             view_size,
@@ -36,8 +34,12 @@ impl PeerSamplingConfig {
             swapping_factor,
         }
     }
-    /// Returns a configuration with all specified parameters
-    pub fn new_with_params(push: bool, pull: bool, sampling_period: u64, sampling_deviation: u64, view_size: usize, healing_factor: usize, swapping_factor: usize) -> Self {
+
+    /// Creates a new configuration with the possibility to randomize the period; this is useful when testing locally in order to avoid network saturation
+    /// # Arguments
+    ///
+    /// * `sampling_deviation` - The maximum value of the random value added to the period
+    pub fn new_with_deviation(push: bool, pull: bool, sampling_period: u64, sampling_deviation: u64, view_size: usize, healing_factor: usize, swapping_factor: usize) -> Self {
         PeerSamplingConfig {
             push,
             pull,
@@ -80,28 +82,40 @@ impl PeerSamplingConfig {
 
 /// The gossip parameters
 pub struct GossipConfig {
-    /// Does the node push its content
     push: bool,
-    /// When active, if the node will pull content headers from other peers
-    /// When passive, if it responds with its content headers to pull from other peers
     pull: bool,
-    /// Host address
-    address: SocketAddr,
-    /// Length of each gossip period
     gossip_interval: u64,
-    /// Maximum value of random deviation added to the gossip interval.
-    /// Intended for local testing.
     gossip_deviation: u64,
-    /// Strategy for update expiration
-    update_expiration: UpdateExpiration,
+    update_expiration: UpdateExpirationMode,
 }
 
 impl GossipConfig {
-    pub fn new(push: bool, pull: bool, address: SocketAddr, gossip_interval: u64, gossip_deviation: u64, update_expiration: UpdateExpiration) -> Self {
+    /// Creates a new gossip configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `push` - If the node push its content to other nodes
+    /// * `pull` - When active, if the node will pull content from other peers; when passive, if the node responds with its content to push requests
+    /// * `gossip_interval` - Length of each gossip period
+    /// * `update_expiration` - Strategy for update expiration, see [UpdateExpirationMode]
+    pub fn new(push: bool, pull: bool, gossip_interval: u64, update_expiration: UpdateExpirationMode) -> Self {
         GossipConfig {
             push,
             pull,
-            address,
+            gossip_interval,
+            gossip_deviation: 0,
+            update_expiration,
+        }
+    }
+
+    /// Creates a new configuration with the possibility to randomize the period; this is useful when testing locally in order to avoid network saturation
+    /// # Arguments
+    ///
+    /// * `gossip_deviation` - The maximum value of the random value added to the period
+    pub fn new_with_deviation(push: bool, pull: bool, gossip_interval: u64, gossip_deviation: u64, update_expiration: UpdateExpirationMode) -> Self {
+        GossipConfig {
+            push,
+            pull,
             gossip_interval,
             gossip_deviation,
             update_expiration,
@@ -113,22 +127,55 @@ impl GossipConfig {
     pub fn is_pull(&self) -> bool {
         self.pull
     }
-    pub fn address(&self) -> &SocketAddr {
-        &self.address
-    }
     pub fn gossip_interval(&self) -> u64 {
         self.gossip_interval
     }
     pub fn gossip_deviation(&self) -> u64 {
         self.gossip_deviation
     }
-    pub fn update_expiration(&self) -> &UpdateExpiration {
+    pub fn update_expiration(&self) -> &UpdateExpirationMode {
         &self.update_expiration
     }
 }
 
+/// Strategy for update expiration
 #[derive(Clone)]
-pub enum UpdateExpiration {
-    DurationMillis(u64),
-    Count(u64),
+pub enum UpdateExpirationMode {
+    /// Updates never expire
+    None,
+    /// Updates expire after the specified duration (milliseconds)
+    DurationMillis(u128),
+    /// Updates expire after being pushed the specified number of times
+    PushCount(u64),
+}
+
+pub enum UpdateExpirationValue {
+    None,
+    DurationMillis(std::time::Instant, u128),
+    PushCount(u64),
+}
+impl UpdateExpirationValue {
+    pub fn new(expiration_mode: UpdateExpirationMode) -> Self {
+        match expiration_mode {
+            UpdateExpirationMode::None => UpdateExpirationValue::None,
+            UpdateExpirationMode::PushCount(count) => UpdateExpirationValue::PushCount(count),
+            UpdateExpirationMode::DurationMillis(ms) => UpdateExpirationValue::DurationMillis(std::time::Instant::now(), ms),
+        }
+    }
+
+    pub fn increase_age(&mut self) {
+        match self {
+            // decrease time to live
+            UpdateExpirationValue::PushCount(ref mut count) => *count -= 1,
+            _ => (),
+        }
+    }
+
+    pub fn has_expired(&self) -> bool {
+        match self {
+            UpdateExpirationValue::None => false,
+            UpdateExpirationValue::PushCount(count) => *count == 0,
+            UpdateExpirationValue::DurationMillis(start, ttl) => start.elapsed().as_millis() >= *ttl,
+        }
+    }
 }

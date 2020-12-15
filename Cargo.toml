@@ -1,10 +1,8 @@
 [package]
 name = "gossip"
-version = "0.1.0"
-authors = ["pouriya-zarbafian <pouriya.zarbafian@example.com>"]
+version = "0.0.1"
+authors = ["Pouriya Zarbafian <pouriya.zarbafian@gmail.com>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 log = "0.4.11"

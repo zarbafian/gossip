@@ -4,13 +4,9 @@ use std::io::Write;
 /// Configuration for sending protocol monitoring data
 #[derive(Clone)]
 pub struct MonitoringConfig {
-    /// Enable sending data
     enabled: bool,
-    /// Monitoring host
     host: String,
-    /// Peer URL endpoint
     peer_path: String,
-    /// Updates URL endpoint
     update_path: String,
 }
 
@@ -19,8 +15,10 @@ impl MonitoringConfig {
     ///
     /// # Arguments
     ///
-    /// * `enabled` - Share monitoring data
-    /// * `url` - URL of monitoring host
+    /// * `enabled` - Send monitoring data for peers and updates
+    /// * `url` - Monitoring host
+    /// * `peer_path` - Path for sending peer sampling view
+    /// * `update_path` - Path for sending updates
     pub fn new(enabled: bool, host: String, peer_path: String, update_path: String) -> MonitoringConfig {
         MonitoringConfig {
             enabled,
@@ -108,15 +106,9 @@ impl MonitoringConfig {
         request_data.push_str("\r\n");
         request_data.push_str(&json);
 
-        //println!("request_data = {:?}", request_data);
-
         let _request = stream.write_all(request_data.as_bytes())?;
-        //println!("request = {:?}", request);
-
         let mut buf = String::new();
         let _result = stream.read_to_string(&mut buf)?;
-        //println!("result = {}", result);
-        //log::debug!("buf = {}", buf);
 
         Ok(())
     }
