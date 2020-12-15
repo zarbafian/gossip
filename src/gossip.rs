@@ -15,6 +15,7 @@ use crate::peer::Peer;
 use crate::message::sampling::PeerSamplingMessage;
 use crate::monitor::MonitoringConfig;
 
+/// The gossip service
 pub struct GossipService<T> {
     /// Socket address of the node
     address: SocketAddr,
@@ -248,7 +249,10 @@ where T: UpdateHandler + 'static + Send
                     break;
                 }
 
-                let sleep = gossip_interval + rand::thread_rng().gen_range(0, gossip_deviation);
+                let deviation =
+                    if gossip_deviation == 0 { 0 }
+                    else { rand::thread_rng().gen_range(0, gossip_deviation) };
+                let sleep = gossip_interval + deviation;
                 std::thread::sleep(std::time::Duration::from_millis(sleep));
 
                 let mut peer_sampling_service = peer_sampling_arc.lock().unwrap();
@@ -346,6 +350,10 @@ where T: UpdateHandler + 'static + Send
 
         // terminate peer sampling
         self.peer_sampling_service.lock().unwrap().shutdown()?;
+
+        // clean updates
+        self.active_updates.lock().unwrap().clear();
+        self.removed_updates.lock().unwrap().clear();
 
         if error {
             Err("toto")?

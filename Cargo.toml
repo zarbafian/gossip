@@ -1,8 +1,19 @@
 [package]
 name = "gossip"
+description = "A generic and configurable gossip protocol"
 version = "0.0.1"
 authors = ["Pouriya Zarbafian <pouriya.zarbafian@gmail.com>"]
 edition = "2018"
+license = "MIT"
+repository = "https://github.com/pouriya-zarbafian/gossip.git"
+keywords = ["distributed-systems", "gossip-protocol", "peer-sampling", "random-graph", "overlay-network"]
+categories = ["algorithms"]
+readme = "README.md"
+exclude = [
+    "tests/*",
+    ".gitignore",
+    "README.md"
+]
 
 [dependencies]
 log = "0.4.11"
