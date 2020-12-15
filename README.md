@@ -21,7 +21,7 @@ Updates broadcast by other peers must be delivered to the application layer.
 To this end, the `start` method also requires a struct implementing the `UpdateHandler` trait to handle `Update` messages received from other peers.
 
 # Example
-```
+```rust
 // node address
 let address = "127.0.0.1:9000";
 
