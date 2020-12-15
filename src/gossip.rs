@@ -28,6 +28,8 @@ pub struct GossipService<T> {
     activities: Vec<JoinHandle<()>>,
     /// Active updates
     active_updates: Arc<Mutex<HashMap<String, Update>>>,
+    /// Strategy for
+    forget_strategy: u64,
     /// Application callback for handling updates
     update_callback: Arc<Mutex<Option<Box<T>>>>,
     /// Monitoring configuration
@@ -52,9 +54,14 @@ where T: UpdateHandler + 'static + Send
             shutdown: Arc::new(AtomicBool::new(false)),
             activities: Vec::new(),
             active_updates: Arc::new(Mutex::new(HashMap::new())),
+            forget_strategy: 0,
             update_callback: Arc::new(Mutex::new(None)),
             monitoring_config,
         }
+    }
+
+    pub fn address(&self) -> &SocketAddr {
+        &self.address
     }
 
     /// Start gossiping-related activities

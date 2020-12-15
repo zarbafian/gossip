@@ -34,7 +34,7 @@ fn peer_sampling_smoke_test() {
     // create and initiate the peer sampling service
     let mut service = GossipService::new(
         init_address.parse().unwrap(),
-        PeerSamplingConfig::new(true, true, sampling_period, sampling_deviation, c, h, c),
+        PeerSamplingConfig::new_with_params(true, true, sampling_period, sampling_deviation, c, h, c),
         GossipConfig::new(true, true, init_address.parse().unwrap(), gossip_period, gossip_deviation),
         Some(monitoring_config.clone())
     );
@@ -52,7 +52,7 @@ fn peer_sampling_smoke_test() {
         // create and initiate the gossip service
         let mut ipv4_service = GossipService::new(
             address.parse().unwrap(),
-            PeerSamplingConfig::new(true, true, sampling_period, sampling_deviation, c, h, c),
+            PeerSamplingConfig::new_with_params(true, true, sampling_period, sampling_deviation, c, h, c),
             GossipConfig::new(true, true, address.parse().unwrap(), gossip_period, gossip_deviation),
             Some(monitoring_config.clone())
         );

@@ -3,16 +3,6 @@ mod common;
 use gossip::{GossipService, GossipConfig, PeerSamplingConfig, Peer, UpdateHandler, Update};
 use log::LevelFilter;
 
-struct TextMessageListener {id: String}
-impl UpdateHandler for TextMessageListener {
-    fn on_update(&self, update: Update) {
-        log::info!("--------------------------");
-        log::info!("[{}] Received message:", self.id);
-        log::info!("{}", String::from_utf8(update.content().to_vec()).unwrap());
-        log::info!("--------------------------");
-    }
-}
-
 #[test]
 fn start_gossip() {
     common::configure_logging(log::LevelFilter::Info).unwrap();
@@ -26,7 +16,7 @@ fn start_gossip() {
     let listener_1 = TextMessageListener { id: address_1.to_owned() };
     let mut service_1 = GossipService::new(
         address_1.parse().unwrap(),
-        PeerSamplingConfig::new(true, true, sampling_period, sampling_deviation, 10, 1, 4),
+        PeerSamplingConfig::new_with_params(true, true, sampling_period, sampling_deviation, 10, 1, 4),
         GossipConfig::new(true, true, address_1.parse().unwrap(), gossip_period, gossip_deviation),
         None
     );
@@ -39,7 +29,7 @@ fn start_gossip() {
     let listener_2 = TextMessageListener { id: address_2.to_owned() };
     let mut service_2 = GossipService::new(
         address_2.parse().unwrap(),
-        PeerSamplingConfig::new(true, true, sampling_period, sampling_deviation, 10, 1, 4),
+        PeerSamplingConfig::new_with_params(true, true, sampling_period, sampling_deviation, 10, 1, 4),
         GossipConfig::new(true, true,address_2.parse().unwrap(), gossip_period, gossip_deviation),
         None
     );

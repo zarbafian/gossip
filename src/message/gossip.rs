@@ -105,7 +105,7 @@ impl Update {
         &self.content
     }
 
-    pub fn digest(&self) -> &str {
+    pub fn digest(&self) -> &String {
         &self.digest
     }
 }

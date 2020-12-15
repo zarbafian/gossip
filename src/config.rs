@@ -24,8 +24,20 @@ pub struct PeerSamplingConfig {
 }
 
 impl PeerSamplingConfig {
-    /// Returns a configuration with specified parameters
-    pub fn new(push: bool, pull: bool, sampling_period: u64, sampling_deviation: u64, view_size: usize, healing_factor: usize, swapping_factor: usize) -> Self {
+    /// Returns a configuration with all specified parameters
+    pub fn new(sampling_period: u64, view_size: usize, healing_factor: usize, swapping_factor: usize) -> Self {
+        PeerSamplingConfig {
+            push: true,
+            pull: true,
+            sampling_period,
+            sampling_deviation: 0,
+            view_size,
+            healing_factor,
+            swapping_factor,
+        }
+    }
+    /// Returns a configuration with all specified parameters
+    pub fn new_with_params(push: bool, pull: bool, sampling_period: u64, sampling_deviation: u64, view_size: usize, healing_factor: usize, swapping_factor: usize) -> Self {
         PeerSamplingConfig {
             push,
             pull,

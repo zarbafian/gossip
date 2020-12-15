@@ -181,8 +181,8 @@ impl PeerSamplingService {
                 // Compute time for sleep cycle
                 let deviation =
                     if config.sampling_deviation() == 0 { 0 }
-                    else { rand::thread_rng().gen_range(0, config.sampling_deviation() * 1000) };
-                let sleep_time = config.sampling_period() * 1000 + deviation;
+                    else { rand::thread_rng().gen_range(0, config.sampling_deviation()) };
+                let sleep_time = config.sampling_period() + deviation;
                 std::thread::sleep(std::time::Duration::from_millis(sleep_time));
 
                 let mut view = view_arc.lock().unwrap();
