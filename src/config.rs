@@ -80,6 +80,20 @@ impl PeerSamplingConfig {
     }
 }
 
+impl Default for PeerSamplingConfig {
+    fn default() -> Self {
+        PeerSamplingConfig {
+            push: true,
+            pull: true,
+            sampling_period: 60000,
+            sampling_deviation: 0,
+            view_size: 30,
+            healing_factor: 3,
+            swapping_factor: 12
+        }
+    }
+}
+
 /// The gossip parameters
 pub struct GossipConfig {
     push: bool,
@@ -135,6 +149,18 @@ impl GossipConfig {
     }
     pub fn update_expiration(&self) -> &UpdateExpirationMode {
         &self.update_expiration
+    }
+}
+
+impl Default for GossipConfig {
+    fn default() -> Self {
+        GossipConfig {
+            push: true,
+            pull: true,
+            gossip_interval: 500,
+            gossip_deviation: 0,
+            update_expiration: UpdateExpirationMode::PushCount(10)
+        }
     }
 }
 

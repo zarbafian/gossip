@@ -62,6 +62,15 @@ where T: UpdateHandler + 'static + Send
         }
     }
 
+    /// Create a gossip service with default configurations
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - Socket address of the node
+    pub fn new_with_defaults(address: SocketAddr) -> Self {
+        Self::new(address, PeerSamplingConfig::default(), GossipConfig::default(), None)
+    }
+
     pub fn address(&self) -> &SocketAddr {
         &self.address
     }

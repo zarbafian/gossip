@@ -37,10 +37,10 @@ fn peer_sampling_smoke_test() {
     let mut service = GossipService::new(
         init_address.parse().unwrap(),
         PeerSamplingConfig::new_with_deviation(true, true, sampling_period, sampling_deviation, c, h, c),
-        GossipConfig::new_with_deviation(true, true, init_address.parse().unwrap(), gossip_period, gossip_deviation),
+        GossipConfig::new_with_deviation(true, true, gossip_period, gossip_deviation, UpdateExpirationMode::None),
         Some(monitoring_config.clone())
     );
-    service.start(no_peer_handler);
+    service.start(no_peer_handler, Box::new(common::TextMessageListener::new(init_address.to_owned())));
     instances.push(service);
 
     let mut port = 9001;
@@ -59,7 +59,7 @@ fn peer_sampling_smoke_test() {
             GossipConfig::new_with_deviation(push, pull, gossip_period, gossip_deviation, UpdateExpirationMode::None),
             Some(monitoring_config.clone())
         );
-        ipv4_service.start(init_handler);
+        ipv4_service.start(init_handler, Box::new(common::TextMessageListener::new(address.to_owned())));
         instances.push(ipv4_service);
 
         port += 1;
@@ -79,7 +79,7 @@ fn peer_sampling_smoke_test() {
             GossipConfig::new_with_deviation(push, pull, gossip_period, gossip_deviation, UpdateExpirationMode::None),
             Some(monitoring_config.clone())
         );
-        ipv6_service.start(init_handler);
+        ipv6_service.start(init_handler, Box::new(common::TextMessageListener::new(address.to_owned())));
         instances.push(ipv6_service);
 
         port += 1;
