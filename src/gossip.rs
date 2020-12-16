@@ -163,7 +163,7 @@ where T: UpdateHandler + 'static + Send
         let active_updates_arc = Arc::clone(&self.active_updates);
         let removed_updates_arc = Arc::clone(&self.removed_updates);
         let update_callback_arc = Arc::clone(&self.update_handler);
-        let update_expiration = self.gossip_config.update_expiration().clone();
+        let expiration_mode = self.gossip_config.update_expiration().clone();
         let monitoring_config = self.monitoring_config.clone();
         let handle = std::thread::Builder::new().name(format!("{} - content receiver", address)).spawn(move|| {
             log::info!("Started message content handling thread");
@@ -171,16 +171,15 @@ where T: UpdateHandler + 'static + Send
 
                 match message.message_type() {
                     MessageType::Request => {
-                        log::debug!("Received content request: {:?}", message.content());
                         if let Ok(peer_address) = message.sender().parse::<SocketAddr>() {
                             let active_updates = active_updates_arc.lock().unwrap();
                             if active_updates.len() > 0 {
                                 let mut map = HashMap::new();
-                                message.content().iter().for_each(|(digest, _)| {
-                                    if let Some((update, _)) = active_updates.get(digest) {
+                                for (digest, _) in message.content() {
+                                    if let Some((update, _)) = active_updates.get(&digest) {
                                         map.insert(digest.to_owned(), update.content().to_vec());
                                     }
-                                });
+                                }
                                 let message = ContentMessage::new_response(address.clone(), map);
                                 match crate::network::send(&peer_address, Box::new(message)) {
                                     Ok(written) => log::trace!("Sent content response - {} bytes to {:?}", written, peer_address),
@@ -190,18 +189,18 @@ where T: UpdateHandler + 'static + Send
                         }
                     }
                     MessageType::Response => {
-                        if message.content().len() > 0 {
+                        if message.len() > 0 {
                             let mut active_updates = active_updates_arc.lock().unwrap();
                             let removed_updates = removed_updates_arc.lock().unwrap();
-                            message.content().iter().for_each(|(digest, content)| {
-                                if !active_updates.contains_key(digest) && !removed_updates.contains(digest) {
+                            for (digest, content) in message.content() {
+                                if !active_updates.contains_key(&digest) && !removed_updates.contains(&digest) {
                                     let update = Update::new(content.clone());
-                                    if digest == update.digest() {
+                                    if digest == *update.digest() {
                                         log::info!("New update received: {}", update.digest());
-                                        active_updates.insert(digest.to_owned(), (update, UpdateExpirationValue::new(update_expiration.clone())));
+                                        active_updates.insert(digest.to_owned(), (update, UpdateExpirationValue::new(expiration_mode.clone())));
                                         let mutex = update_callback_arc.lock().unwrap();
                                         if let Some(callback) = mutex.as_ref() {
-                                            let update_app = Update::new(content.clone());
+                                            let update_app = Update::new(content);
                                             callback.on_update(update_app);
                                         }
 
@@ -210,7 +209,7 @@ where T: UpdateHandler + 'static + Send
                                         log::warn!("Digests did not match: {} <> {}", digest, update.digest())
                                     }
                                 }
-                            });
+                            }
 
                             // Monitoring
                             if monitoring_config.enabled() {
@@ -220,7 +219,6 @@ where T: UpdateHandler + 'static + Send
                         }
                     }
                 }
-                //log::debug!("Received content of digest: {}", message.digest());
             }
         }).unwrap();
         self.activities.push(handle);
@@ -283,10 +281,14 @@ where T: UpdateHandler + 'static + Send
                                     active_updates.remove(digest);
                                     removed_updates.push(digest.to_owned());
                                 });
+                                // TODO: use parameter
+                                if removed_updates.len() > 1500 {
+                                    removed_updates.drain(0..500);
+                                }
                             }
                         }
                         else {
-                            // send empty headers to trigger response
+                            // will send empty headers to trigger response
                         }
 
                         log::debug!("Will send header request with {:?}", message.messages());

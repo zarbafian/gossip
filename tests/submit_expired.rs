@@ -4,7 +4,6 @@ use gossip::{GossipService, GossipConfig, PeerSamplingConfig, Peer, UpdateExpira
 use crate::common::TextMessageListener;
 
 #[test]
-#[should_panic (expected = "Submitted expired message")]
 fn submit_expired() {
     common::configure_logging(log::LevelFilter::Debug).unwrap();
 
@@ -49,5 +48,5 @@ fn submit_expired() {
     // wait for expiration
     std::thread::sleep(std::time::Duration::from_secs(10));
 
-    service_1.submit(message_content_1.as_bytes().to_vec()).unwrap();
+    assert_eq!(service_1.submit(message_content_1.as_bytes().to_vec()).err().unwrap().to_string(), "Submitted expired message");
 }

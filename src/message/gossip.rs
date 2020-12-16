@@ -2,7 +2,8 @@ use serde::{Serialize, Deserialize};
 use crate::message::{Message, MESSAGE_PROTOCOL_HEADER_MESSAGE, MESSAGE_PROTOCOL_CONTENT_MESSAGE, MessageType};
 use std::collections::HashMap;
 
-/// A message containing the digests of all the active updates of the node; it is used to advertise the updates present at each node
+/// A message containing the digests of all the active updates of the node.
+/// It is used to advertise the updates present at each node.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HeaderMessage {
     sender: String,
@@ -70,8 +71,13 @@ impl ContentMessage {
     pub fn message_type(&self) -> &MessageType {
         &self.message_type
     }
-    pub fn content(&self) -> &HashMap<String, Vec<u8>> {
-        &self.content
+
+    pub fn len(&self) -> usize {
+        self.content.len()
+    }
+    /// Returns the content of the message. Moves the message to avoid copying its content.
+    pub fn content(self) -> HashMap<String, Vec<u8>> {
+        self.content
     }
 }
 impl Message for ContentMessage {

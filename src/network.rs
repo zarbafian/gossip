@@ -5,18 +5,24 @@ use std::sync::Arc;
 use std::error::Error;
 use serde::Serialize;
 use std::sync::mpsc::Sender;
-use crate::message::Message;
+use crate::message::{Message, MASK_MESSAGE_PROTOCOL, MESSAGE_PROTOCOL_SAMPLING_MESSAGE, MESSAGE_PROTOCOL_HEADER_MESSAGE, MESSAGE_PROTOCOL_CONTENT_MESSAGE, MESSAGE_PROTOCOL_NOOP_MESSAGE};
 use crate::message::sampling::PeerSamplingMessage;
 use crate::message::gossip::{HeaderMessage, ContentMessage};
 
+/// Sends a message to the specified address
+///
+/// # Arguments
+///
+/// * `address` - Address of the recipient
+/// * `message` - Message implementing the [Message] trait
 pub fn send<M>(address: &SocketAddr, message: Box<M>) -> Result<usize, Box<dyn Error>>
 where M: Message + Serialize
 {
     match message.as_bytes() {
         Ok(mut bytes) => {
-            let mut buffer = vec![message.protocol()];
-            buffer.append(&mut bytes);
-            let written = TcpStream::connect(address)?.write(&buffer)?;
+            // insert protocol byte for deserialization
+            bytes.insert(0, message.protocol());
+            let written = TcpStream::connect(address)?.write(&bytes)?;
             Ok(written)
         }
         Err(e) => {
@@ -26,6 +32,15 @@ where M: Message + Serialize
     }
 }
 
+/// Starts listening to TCP connections
+///
+/// # Arguments
+///
+/// * `address` - Bind address
+/// * `shutdown` - Flag used to check for a shutdown request
+/// * `peer_sampling_sender` - Used to dispatch peer sampling messages
+/// * `header_sender` - Used to dispatch gossip header messages
+/// * `content_sender` - Used to dispatch gossip content messages
 pub fn listen(address: &SocketAddr, shutdown: Arc<std::sync::atomic::AtomicBool>, peer_sampling_sender: Sender<PeerSamplingMessage>, header_sender: Sender<HeaderMessage>, content_sender: Sender<ContentMessage>) -> std::io::Result<JoinHandle<()>> {
 
     let listener = std::net::TcpListener::bind(address)?;
@@ -66,20 +81,20 @@ pub fn listen(address: &SocketAddr, shutdown: Arc<std::sync::atomic::AtomicBool>
 }
 
 fn handle_message(buffer: Vec<u8>, peer_sampling_sender: &Sender<PeerSamplingMessage>, header_sender: &Sender<HeaderMessage>, content_sender: &Sender<ContentMessage>) -> Result<(), Box<dyn Error>> {
-    let protocol = buffer[0] & crate::message::MASK_MESSAGE_PROTOCOL;
+    let protocol = buffer[0] & MASK_MESSAGE_PROTOCOL;
     match protocol {
-        crate::message::MESSAGE_PROTOCOL_NOOP_MESSAGE => Ok(()),
-        crate::message::MESSAGE_PROTOCOL_SAMPLING_MESSAGE => {
+        MESSAGE_PROTOCOL_NOOP_MESSAGE => Ok(()),
+        MESSAGE_PROTOCOL_SAMPLING_MESSAGE => {
             let message = PeerSamplingMessage::from_bytes(&buffer[1..])?;
             peer_sampling_sender.send(message)?;
             Ok(())
         }
-        crate::message::MESSAGE_PROTOCOL_CONTENT_MESSAGE => {
+        MESSAGE_PROTOCOL_CONTENT_MESSAGE => {
             let message = ContentMessage::from_bytes(&buffer[1..])?;
             content_sender.send(message)?;
             Ok(())
         }
-        crate::message::MESSAGE_PROTOCOL_HEADER_MESSAGE => {
+        MESSAGE_PROTOCOL_HEADER_MESSAGE => {
             let message = HeaderMessage::from_bytes(&buffer[1..])?;
             header_sender.send(message)?;
             Ok(())
