@@ -4,14 +4,14 @@ All aspects of the gossip protocol can be customized (push/pull, gossip period,.
 
 The overlay network between the peers is created using [Gossip-based Peer Sampling](https://infoscience.epfl.ch/record/109297/files/all.pdf) [[1]]. The configuration for peer sampling can also be customized.
 
-## Gossip-based Peer Sampling
-In large distributed systems that use gossip protocols to broadcast information to the network, peers should be selected at random in the network. In theory, this requires a knowledge of all the participating nodes. Gossip-based Peer Sampling is an algorithm by Jelasity[[1]] et al that solves the random peer selection problem. 
-The algorithm consists of rounds of push/pull when peers exchange their views of the network. During each round a node selects a peer at random and either push a selection of peers inside its view (if push is enabled) or an empty view to trigger a pull (if push is disabled). The selected node will process the view received (possibly empty), and responds with its own view if pull is enabled.
-
-# Gossip algorithms
+## Gossip algorithms
 Gossip algorithms enable the propagation of information in a network. It is achieved by nodes exchanging their knowledge. 
 At each round, a node selects a peer at random in the network and sends him the state of his knowledge. The peer responds with its own view, 
 and each peer is able to request the parts of the view that are missing on his side.
+
+## Gossip-based Peer Sampling
+In large distributed systems that use gossip protocols to broadcast information to the network, peers should be selected at random in the network. In theory, this requires a knowledge of all the participating nodes. Because peers are constantly coming and leaving, this can be impractical. Gossip-based Peer Sampling is an algorithm by Jelasity[[1]] et al. that solves the random peer selection problem by building a view of the network that simulates a random view. 
+The algorithm consists of rounds of push/pull when peers exchange their views of the network. During each round a node selects a peer at random and either push a selection of peers inside its view (if push is enabled) or an empty view to trigger a pull (if push is disabled). The selected node will process the view received (possibly empty), and responds with its own view if pull is enabled.
 
 # API
 The gossiping functionalities are provided by the `GossipService` struct:
