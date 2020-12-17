@@ -2,7 +2,16 @@
 This crate implements a gossip protocol that is configurable and generic with respect to the application. 
 All aspects of the gossip protocol can be customized (push/pull, gossip period,...), and any data that can be represented in a binary format can broadcast to the network.
 
-The overlay network between the peers is created using [Gossip-based Peer Sampling](https://infoscience.epfl.ch/record/109297/files/all.pdf). The configuration for peer sampling can also be customized.
+The overlay network between the peers is created using [Gossip-based Peer Sampling](https://infoscience.epfl.ch/record/109297/files/all.pdf) [[1]]. The configuration for peer sampling can also be customized.
+
+## Gossip-based Peer Sampling
+In large distributed systems that use gossip protocols to broadcast information to the network, peers should be selected at random in the network. In theory, this requires a knowledge of all the participating nodes. Gossip-based Peer Sampling is an algorithm by Jelasity[[1]] et al that solves the random peer selection problem. 
+The algorithm consists of rounds of push/pull when peers exchange their views of the network. During each round a node selects a peer at random and either push a selection of peers inside its view (if push is enabled) or an empty view to trigger a pull (if push is disabled). The selected node will process the view received (possibly empty), and responds with its own view if pull is enabled.
+
+# Gossip algorithms
+Gossip algorithms enable the propagation of information in a network. It is achieved by nodes exchanging their knowledge. 
+At each round, a node selects a peer at random in the network and sends him the state of his knowledge. The peer responds with its own view, 
+and each peer is able to request the parts of the view that are missing on his side.
 
 # API
 The gossiping functionalities are provided by the `GossipService` struct:
@@ -35,6 +44,9 @@ gossip_service.start(Box::new(existing_peers), Box::new(MyUpdateHandler::new()))
 // submit a message
 gossip_service.submit("Some random message".as_bytes().to_vec())?;
 
-// shutdown the gossip protocol
-gossip_service.shutdown();
+// shutdown the gossip protocol on exit
+//gossip_service.shutdown();
 ```
+
+[1]: https://infoscience.epfl.ch/record/109297/files/all.pdf
+[[1]]: M. Jelasity, S. Voulgaris, R. Guerraoui, A.-M. Kermarrec, M. van Steen, Gossip-based Peer Sampling, 2007
