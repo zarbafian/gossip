@@ -165,7 +165,7 @@ impl Default for GossipConfig {
 }
 
 /// Strategy for update expiration
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum UpdateExpirationMode {
     /// Updates never expire
     None,
