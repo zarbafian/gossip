@@ -98,7 +98,7 @@ impl Default for PeerSamplingConfig {
 pub struct GossipConfig {
     push: bool,
     pull: bool,
-    gossip_interval: u64,
+    gossip_period: u64,
     gossip_deviation: u64,
     update_expiration: UpdateExpirationMode,
 }
@@ -110,13 +110,13 @@ impl GossipConfig {
     ///
     /// * `push` - If the node push its content to other nodes
     /// * `pull` - When active, if the node will pull content from other peers; when passive, if the node responds with its content to push requests
-    /// * `gossip_interval` - Length of each gossip period
+    /// * `gossip_period` - Length of each gossip period
     /// * `update_expiration` - Strategy for update expiration, see [UpdateExpirationMode]
-    pub fn new(push: bool, pull: bool, gossip_interval: u64, update_expiration: UpdateExpirationMode) -> Self {
+    pub fn new(push: bool, pull: bool, gossip_period: u64, update_expiration: UpdateExpirationMode) -> Self {
         GossipConfig {
             push,
             pull,
-            gossip_interval,
+            gossip_period,
             gossip_deviation: 0,
             update_expiration,
         }
@@ -126,11 +126,11 @@ impl GossipConfig {
     /// # Arguments
     ///
     /// * `gossip_deviation` - The maximum value of the random value added to the period
-    pub fn new_with_deviation(push: bool, pull: bool, gossip_interval: u64, gossip_deviation: u64, update_expiration: UpdateExpirationMode) -> Self {
+    pub fn new_with_deviation(push: bool, pull: bool, gossip_period: u64, gossip_deviation: u64, update_expiration: UpdateExpirationMode) -> Self {
         GossipConfig {
             push,
             pull,
-            gossip_interval,
+            gossip_period,
             gossip_deviation,
             update_expiration,
         }
@@ -141,8 +141,8 @@ impl GossipConfig {
     pub fn is_pull(&self) -> bool {
         self.pull
     }
-    pub fn gossip_interval(&self) -> u64 {
-        self.gossip_interval
+    pub fn gossip_period(&self) -> u64 {
+        self.gossip_period
     }
     pub fn gossip_deviation(&self) -> u64 {
         self.gossip_deviation
@@ -157,7 +157,7 @@ impl Default for GossipConfig {
         GossipConfig {
             push: true,
             pull: true,
-            gossip_interval: 500,
+            gossip_period: 500,
             gossip_deviation: 0,
             update_expiration: UpdateExpirationMode::PushCount(10)
         }

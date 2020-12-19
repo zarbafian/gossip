@@ -4,10 +4,11 @@ use std::io::Write;
 /// Configuration for sending protocol monitoring data
 #[derive(Clone)]
 pub struct MonitoringConfig {
-    enabled: bool,
     host: String,
-    peer_path: String,
-    update_path: String,
+    monitor_peers: bool,
+    peers_path: String,
+    monitor_updates: bool,
+    updates_path: String,
 }
 
 impl MonitoringConfig {
@@ -15,21 +16,26 @@ impl MonitoringConfig {
     ///
     /// # Arguments
     ///
-    /// * `enabled` - Send monitoring data for peers and updates
-    /// * `url` - Monitoring host
-    /// * `peer_path` - Path for sending peer sampling view
-    /// * `update_path` - Path for sending updates
-    pub fn new(enabled: bool, host: String, peer_path: String, update_path: String) -> MonitoringConfig {
+    /// * `host` - Monitoring host
+    /// * `monitor_peers` - Send monitoring data about peer sampling
+    /// * `peers_path` - Path for sending peer sampling view
+    /// * `monitor_updates` - Send monitoring data about updates
+    /// * `updates_path` - Path for sending updates
+    pub fn new(host: String, monitor_peers: bool, peers_path: String, monitor_updates: bool, updates_path: String) -> MonitoringConfig {
         MonitoringConfig {
-            enabled,
             host,
-            peer_path,
-            update_path,
+            monitor_peers,
+            peers_path,
+            monitor_updates,
+            updates_path,
         }
     }
 
-    pub fn enabled(&self) -> bool {
-        self.enabled
+    pub fn monitor_peers(&self) -> bool {
+        self.monitor_peers
+    }
+    pub fn monitor_updates(&self) -> bool {
+        self.monitor_updates
     }
 
     /// Send monitoring data of peers
@@ -40,7 +46,7 @@ impl MonitoringConfig {
     /// * `peers` - List of peers in the view of the process
     pub fn send_peer_data(&self, pid: String, peers: Vec<String>) {
         let host = self.host.clone();
-        let path = self.peer_path.clone();
+        let path = self.peers_path.clone();
         std::thread::spawn(move || {
             let peers_str = peers.iter()
                 .map(|peer| format!("\"{}\"", peer))
@@ -66,7 +72,7 @@ impl MonitoringConfig {
     /// * `updates` - List of updates the process has received
     pub fn send_update_data(&self, pid: String, updates: Vec<String>) {
         let host = self.host.clone();
-        let path = self.update_path.clone();
+        let path = self.updates_path.clone();
         std::thread::spawn(move || {
             let updates_str = updates.iter()
                 .map(|update| format!("\"{}\"", update))
@@ -117,10 +123,11 @@ impl MonitoringConfig {
 impl Default for MonitoringConfig {
     fn default() -> Self {
         MonitoringConfig {
-            enabled: false,
             host: "".to_string(),
-            peer_path: "".to_string(),
-            update_path: "".to_string(),
+            monitor_peers: false,
+            peers_path: "".to_string(),
+            monitor_updates: false,
+            updates_path: "".to_string(),
         }
     }
 }

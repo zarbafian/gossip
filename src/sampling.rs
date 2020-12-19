@@ -151,7 +151,7 @@ impl PeerSamplingService {
                     view.select(sampling_config.view_size(), sampling_config.healing_factor(), sampling_config.swapping_factor(), &buffer);
 
                     // Debug and monitoring
-                    if monitoring_config.enabled() {
+                    if monitoring_config.monitor_peers() {
                         let new_view = view.peers.iter()
                             .map(|peer| peer.address().to_owned())
                             .collect::<Vec<String>>();

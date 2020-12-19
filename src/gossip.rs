@@ -212,7 +212,7 @@ where T: UpdateHandler + 'static + Send
                             }
 
                             // Monitoring
-                            if monitoring_config.enabled() {
+                            if monitoring_config.monitor_updates() {
                                 let updates = active_updates.iter().map(|(digest, _)| digest.to_owned()).collect::<Vec<String>>();
                                 monitoring_config.send_update_data(address.clone(), updates);
                             }
@@ -235,7 +235,7 @@ where T: UpdateHandler + 'static + Send
         let push = self.gossip_config.is_push();
         let node_address = self.address.to_string();
         let shutdown_requested = Arc::clone(&self.shutdown);
-        let gossip_interval = self.gossip_config.gossip_interval();
+        let gossip_period = self.gossip_config.gossip_period();
         let gossip_deviation = self.gossip_config.gossip_deviation();
         let peer_sampling_arc = Arc::clone(&self.peer_sampling_service);
         let active_updates_arc = Arc::clone(&self.active_updates);
@@ -250,7 +250,7 @@ where T: UpdateHandler + 'static + Send
                 let deviation =
                     if gossip_deviation == 0 { 0 }
                     else { rand::thread_rng().gen_range(0, gossip_deviation) };
-                let sleep = gossip_interval + deviation;
+                let sleep = gossip_period + deviation;
                 std::thread::sleep(std::time::Duration::from_millis(sleep));
 
                 let mut peer_sampling_service = peer_sampling_arc.lock().unwrap();
