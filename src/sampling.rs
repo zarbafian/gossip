@@ -50,8 +50,13 @@ impl PeerSamplingService {
     /// * `initial_peer` - A closure returning the initial peer for starting the protocol
     pub fn init(&mut self, initial_peer: Box<dyn FnOnce() -> Option<Vec<Peer>>>, receiver: Receiver<PeerSamplingMessage>) {
         // get address of initial peer
-        if let Some(mut initial_peers) = initial_peer() {
-            self.view.lock().unwrap().peers.append(&mut initial_peers);
+        if let Some(initial_peers) = initial_peer() {
+            let mut view = self.view.lock().unwrap();
+            for peer in initial_peers {
+                if peer.address() != &self.address.to_string() {
+                    view.peers.push(peer);
+                }
+            }
         }
 
         // handle received messages
