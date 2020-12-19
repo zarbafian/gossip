@@ -13,7 +13,6 @@ use crate::message::gossip::{Update, UpdateHandler, HeaderMessage, ContentMessag
 use crate::message::{NoopMessage, MessageType};
 use crate::peer::Peer;
 use crate::message::sampling::PeerSamplingMessage;
-use crate::monitor::MonitoringConfig;
 
 /// The gossip service
 pub struct GossipService<T> {
@@ -33,8 +32,6 @@ pub struct GossipService<T> {
     removed_updates: Arc<Mutex<Vec<String>>>,
     /// Application callback for receiving new updates
     update_handler: Arc<Mutex<Option<Box<T>>>>,
-    /// Monitoring configuration
-    monitoring_config: MonitoringConfig,
 }
 
 impl<T> GossipService<T>
@@ -47,19 +44,16 @@ where T: UpdateHandler + 'static + Send
     /// * `address` - Socket address of the node
     /// * `peer_sampling_config` - Configuration for peer sampling, see [PeerSamplingConfig]
     /// * `gossip_config` - Configuration for gossiping, see [GossipConfig]
-    /// * `monitoring_config` - Configuration for monitoring, see [MonitoringConfig]
-    pub fn new(address: SocketAddr, peer_sampling_config: PeerSamplingConfig, gossip_config: GossipConfig, monitoring_config: Option<MonitoringConfig>) -> GossipService<T> {
-        let monitoring_config = monitoring_config.unwrap_or_default();
+    pub fn new(address: SocketAddr, peer_sampling_config: PeerSamplingConfig, gossip_config: GossipConfig) -> GossipService<T> {
         GossipService{
             address,
-            peer_sampling_service: Arc::new(Mutex::new(PeerSamplingService::new(address, peer_sampling_config, monitoring_config.clone()))),
+            peer_sampling_service: Arc::new(Mutex::new(PeerSamplingService::new(address, peer_sampling_config))),
             gossip_config,
             shutdown: Arc::new(AtomicBool::new(false)),
             activities: Vec::new(),
             active_updates: Arc::new(Mutex::new(HashMap::new())),
             removed_updates: Arc::new(Mutex::new(Vec::new())),
             update_handler: Arc::new(Mutex::new(None)),
-            monitoring_config,
         }
     }
 
@@ -69,11 +63,17 @@ where T: UpdateHandler + 'static + Send
     ///
     /// * `address` - Socket address of the node
     pub fn new_with_defaults(address: SocketAddr) -> Self {
-        Self::new(address, PeerSamplingConfig::default(), GossipConfig::default(), None)
+        Self::new(address, PeerSamplingConfig::default(), GossipConfig::default())
     }
 
+    /// Returns the node address
     pub fn address(&self) -> &SocketAddr {
         &self.address
+    }
+
+    /// Returns a list of the node's peer
+    pub fn peers(&self) -> Vec<Peer> {
+        self.peer_sampling_service.lock().unwrap().peers()
     }
 
     /// Starts the gossip protocol and related threads
@@ -164,7 +164,6 @@ where T: UpdateHandler + 'static + Send
         let removed_updates_arc = Arc::clone(&self.removed_updates);
         let update_callback_arc = Arc::clone(&self.update_handler);
         let expiration_mode = self.gossip_config.update_expiration().clone();
-        let monitoring_config = self.monitoring_config.clone();
         let handle = std::thread::Builder::new().name(format!("{} - content receiver", address)).spawn(move|| {
             log::info!("Started message content handling thread");
             while let Ok(message) = receiver.recv() {
@@ -209,12 +208,6 @@ where T: UpdateHandler + 'static + Send
                                         log::warn!("Digests did not match: {} <> {}", digest, update.digest())
                                     }
                                 }
-                            }
-
-                            // Monitoring
-                            if monitoring_config.monitor_updates() {
-                                let updates = active_updates.iter().map(|(digest, _)| digest.to_owned()).collect::<Vec<String>>();
-                                monitoring_config.send_update_data(address.clone(), updates);
                             }
                         }
                     }

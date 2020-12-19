@@ -10,7 +10,6 @@ use std::collections::{HashSet, VecDeque};
 use std::iter::FromIterator;
 use crate::PeerSamplingConfig;
 use crate::peer::Peer;
-use crate::monitor::MonitoringConfig;
 use crate::message::sampling::PeerSamplingMessage;
 use crate::message::{NoopMessage, MessageType};
 
@@ -26,8 +25,6 @@ pub struct PeerSamplingService {
     thread_handles: Vec<JoinHandle<()>>,
     /// Handle for shutting down threads
     shutdown: Arc<AtomicBool>,
-    /// Monitoring configuration
-    monitoring_config: MonitoringConfig,
 }
 
 impl PeerSamplingService {
@@ -35,15 +32,14 @@ impl PeerSamplingService {
     ///
     /// # Arguments
     ///
-    /// * `config` - The parameters for the peer sampling protocol
-    pub fn new(address: SocketAddr, config: PeerSamplingConfig, monitoring_config: MonitoringConfig) -> PeerSamplingService {
+    /// * `config` - The parameters for the peer sampling protocol [PeerSamplingConfig]
+    pub fn new(address: SocketAddr, config: PeerSamplingConfig) -> PeerSamplingService {
         PeerSamplingService {
             address,
             view: Arc::new(Mutex::new(View::new(address.to_string()))),
             config,
             thread_handles: Vec::new(),
             shutdown: Arc::new(AtomicBool::new(false)),
-            monitoring_config,
         }
     }
 
@@ -74,6 +70,13 @@ impl PeerSamplingService {
     /// The local view is built using [Gossip-Based Peer Sampling].
     pub fn get_peer(&mut self) -> Option<Peer> {
         self.view.lock().unwrap().get_peer()
+    }
+
+    /// Returns a copy of the list of peers in the node view
+    pub fn peers(&self) -> Vec<Peer> {
+        self.view.lock().unwrap()
+            .peers.iter().map(|peer| peer.clone())
+            .collect()
     }
 
     /// Stops the threads related to peer sampling activity
@@ -124,7 +127,6 @@ impl PeerSamplingService {
     fn start_receiver(&self, receiver: Receiver<PeerSamplingMessage>) -> JoinHandle<()>{
         let address = self.address.to_string();
         let sampling_config = self.config.clone();
-        let monitoring_config = self.monitoring_config.clone();
         let view_arc = self.view.clone();
         std::thread::Builder::new().name(format!("{} - gbps receiver", &address)).spawn(move|| {
             log::info!("Started message handling thread");
@@ -149,15 +151,6 @@ impl PeerSamplingService {
 
                 if let Some(buffer) = message.view() {
                     view.select(sampling_config.view_size(), sampling_config.healing_factor(), sampling_config.swapping_factor(), &buffer);
-
-                    // Debug and monitoring
-                    if monitoring_config.monitor_peers() {
-                        let new_view = view.peers.iter()
-                            .map(|peer| peer.address().to_owned())
-                            .collect::<Vec<String>>();
-                        log::debug!("{}", new_view.join(", "));
-                        monitoring_config.send_peer_data(address.clone(), new_view);
-                    }
                 }
                 else {
                     log::warn!("received a response with an empty buffer");

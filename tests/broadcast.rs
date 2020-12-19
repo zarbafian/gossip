@@ -25,7 +25,7 @@ impl UpdateHandler for MapUpdatingListener {
 #[test]
 fn all_updates_received() {
     use rand::Rng;
-    use gossip::{GossipConfig, PeerSamplingConfig, MonitoringConfig, Peer, GossipService};
+    use gossip::{GossipConfig, PeerSamplingConfig, Peer, GossipService};
 
     common::configure_logging(log::LevelFilter::Warn).unwrap();
 
@@ -46,9 +46,6 @@ fn all_updates_received() {
 
     let update_expiration = UpdateExpirationMode::PushCount(5);
 
-    //let monitoring_config = Some(MonitoringConfig::new(true, "127.0.0.1:8080".to_owned(), "/peers".to_owned(), "/updates".to_owned()));
-    let monitoring_config = None;
-
     let peer_count = 200;
     let mut instances = vec![];
 
@@ -61,8 +58,7 @@ fn all_updates_received() {
     let mut service = GossipService::new(
         init_peer.parse().unwrap(),
         PeerSamplingConfig::new_with_deviation(push, pull, sampling_period, sampling_deviation, c, h, s),
-        GossipConfig::new_with_deviation(push, pull, gossip_period, gossip_deviation, update_expiration.clone()),
-        monitoring_config.clone()
+        GossipConfig::new_with_deviation(push, pull, gossip_period, gossip_deviation, update_expiration.clone())
     );
     service.start(no_peer_handler, Box::new(MapUpdatingListener::new(init_peer.to_owned(), Arc::clone(&peer_messages))));
     instances.push(service);
@@ -78,8 +74,7 @@ fn all_updates_received() {
         let mut ipv4_service = GossipService::new(
             address.parse().unwrap(),
             PeerSamplingConfig::new_with_deviation(push, pull, sampling_period, sampling_deviation, c, h, s),
-            GossipConfig::new_with_deviation(push, pull, gossip_period, gossip_deviation, update_expiration.clone()),
-            monitoring_config.clone()
+            GossipConfig::new_with_deviation(push, pull, gossip_period, gossip_deviation, update_expiration.clone())
         );
         ipv4_service.start(init_handler, Box::new(MapUpdatingListener::new(address.clone(), Arc::clone(&peer_messages))));
         instances.push(ipv4_service);

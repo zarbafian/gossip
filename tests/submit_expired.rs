@@ -17,8 +17,7 @@ fn submit_expired() {
     let mut service_1 = GossipService::new(
         address_1.parse().unwrap(),
         PeerSamplingConfig::new_with_deviation(true, true, sampling_period, sampling_deviation, 10, 1, 4),
-        GossipConfig::new_with_deviation(true, true, gossip_period, gossip_deviation, expiration_mode.clone()),
-        None
+        GossipConfig::new_with_deviation(true, true, gossip_period, gossip_deviation, expiration_mode.clone())
     );
     service_1.start(
         Box::new( || None),
@@ -29,8 +28,7 @@ fn submit_expired() {
     let mut service_2 = GossipService::new(
         address_2.parse().unwrap(),
         PeerSamplingConfig::new_with_deviation(true, true, sampling_period, sampling_deviation, 10, 1, 4),
-        GossipConfig::new_with_deviation(true, true, gossip_period, gossip_deviation, expiration_mode),
-        None
+        GossipConfig::new_with_deviation(true, true, gossip_period, gossip_deviation, expiration_mode)
     );
     service_2.start(
         Box::new(move || Some(vec![Peer::new(address_1.to_owned())])),
