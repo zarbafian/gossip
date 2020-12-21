@@ -31,22 +31,35 @@ Updates broadcast by other peers must be delivered to the application layer.
 To this end, the `start` method also requires a struct implementing the `UpdateHandler` trait to handle `Update` messages received from other peers.
 
 # Example
+## Implementing a simple handler for text messages
 ```rust
-// node address
-let address = "127.0.0.1:9000";
+pub struct MyUpdateHandler;
 
-// existing peer(s) in the network
-let existing_peers = || Some(vec![ Peer::new("127.0.0.1:9001".to_owned()) ]);
-
-// create and start the service
-let mut gossip_service = GossipService::new_with_defaults(address.parse().unwrap());
-gossip_service.start(Box::new(existing_peers), Box::new(MyUpdateHandler::new()))?;
-
-// submit a message
-gossip_service.submit("Some random message".as_bytes().to_vec())?;
-
-// shutdown the gossip protocol on exit
-//gossip_service.shutdown();
+impl UpdateHandler for MyUpdateHandler {
+    fn on_update(&self, update: Update) {
+        let _string_message = String::from_utf8(update.content().to_vec()).unwrap();
+        // do something with the message...
+    }
+}
+```
+## Starting a gossip node
+```rust
+fn main() {
+    // local machine IP and port for listening
+    let my_address = "127.0.0.1:9000";
+    
+    // existing peer(s) in the network
+    let existing_peers = || Some(vec![ Peer::new("127.0.0.1:9001".to_owned()) ]);
+    
+    // create and start the service
+    let mut gossip_service = GossipService::new_with_defaults(address.parse().unwrap());
+    gossip_service.start(Box::new(existing_peers), Box::new(MyUpdateHandler))?;
+    
+    // submit a message
+    gossip_service.submit("Some random message".as_bytes().to_vec())?;
+    // shutdown the gossip protocol on exit
+    //gossip_service.shutdown();
+}
 ```
 
 [1]: https://infoscience.epfl.ch/record/109297/files/all.pdf
