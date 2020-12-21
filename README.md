@@ -57,6 +57,7 @@ fn main() {
     
     // submit a message
     gossip_service.submit("Some random message".as_bytes().to_vec())?;
+
     // shutdown the gossip protocol on exit
     //gossip_service.shutdown();
 }
