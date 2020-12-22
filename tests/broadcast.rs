@@ -46,7 +46,7 @@ fn all_updates_received() {
 
     let update_expiration = UpdateExpirationMode::PushCount(5);
 
-    let peer_count = 200;
+    let peer_count = 20;
     let mut instances = vec![];
 
     // create first peer with no contact peer
@@ -87,7 +87,7 @@ fn all_updates_received() {
     log::error!("SAMPLING SHOULD BE READY");
     log::error!("--------------------------");
 
-    let message_count = 1;
+    let message_count = 2;
     let mut all_messages = Vec::with_capacity(message_count);
 
     for i in 0..message_count {
