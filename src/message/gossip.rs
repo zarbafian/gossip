@@ -2,13 +2,13 @@ use serde::{Serialize, Deserialize};
 use crate::message::{Message, MESSAGE_PROTOCOL_HEADER_MESSAGE, MESSAGE_PROTOCOL_CONTENT_MESSAGE, MessageType};
 use std::collections::HashMap;
 
-/// A message containing the digests of all the active updates of the node.
+/// A message containing the digests of all the active updates on a node.
 /// It is used to advertise the updates present at each node.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HeaderMessage {
     sender: String,
     message_type: MessageType,
-    messages: Vec<String>,
+    headers: Vec<String>,
 }
 impl HeaderMessage {
     pub fn new_request(sender: String) -> Self {
@@ -21,11 +21,11 @@ impl HeaderMessage {
         HeaderMessage {
             sender,
             message_type,
-            messages: Vec::new()
+            headers: Vec::new()
         }
     }
-    pub fn push(&mut self, message_digest: String) {
-        self.messages.push(message_digest);
+    pub fn set_headers(&mut self, headers: Vec<String>) {
+        self.headers = headers
     }
     pub fn sender(&self) -> &str {
         &self.sender
@@ -33,8 +33,8 @@ impl HeaderMessage {
     pub fn message_type(&self) -> &MessageType {
         &self.message_type
     }
-    pub fn messages(&self) -> &Vec<String> {
-        &self.messages
+    pub fn headers(&self) -> &Vec<String> {
+        &self.headers
     }
 }
 impl Message for HeaderMessage {
@@ -43,8 +43,8 @@ impl Message for HeaderMessage {
     }
 }
 
-/// A message containing the updates.
-/// A [MessageType::Request] is used to query for updates, a [MessageType::Response] is used to send updates.
+/// A message that is either a request for updates ([MessageType::Request]) or a response
+/// containing requested updates ([MessageType::Response]).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ContentMessage {
     sender: String,

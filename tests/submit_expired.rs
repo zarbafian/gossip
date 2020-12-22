@@ -46,5 +46,5 @@ fn submit_expired() {
     // wait for expiration
     std::thread::sleep(std::time::Duration::from_secs(10));
 
-    assert_eq!(service_1.submit(message_content_1.as_bytes().to_vec()).err().unwrap().to_string(), "Submitted expired message");
+    assert!(service_1.is_expired(message_content_1.as_bytes().to_vec()));
 }

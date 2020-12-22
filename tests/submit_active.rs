@@ -16,5 +16,5 @@ fn submit_active() {
     let message_content = "{{ \"id\": \"toto\", \"name\": \"John Doe\" }}";
 
     assert!(service_1.submit(message_content.as_bytes().to_vec()).is_ok());
-    assert_eq!(service_1.submit(message_content.as_bytes().to_vec()).err().unwrap().to_string(), "Message already active");
+    assert!(service_1.is_active(message_content.as_bytes().to_vec()));
 }

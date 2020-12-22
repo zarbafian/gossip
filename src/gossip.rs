@@ -1,15 +1,15 @@
 use std::thread::JoinHandle;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::net::SocketAddr;
 use std::sync::mpsc::{Sender, Receiver};
 use std::collections::HashMap;
 use std::error::Error;
 use rand::Rng;
-use crate::config::{GossipConfig, UpdateExpirationValue};
+use crate::config::GossipConfig;
 use crate::PeerSamplingConfig;
 use crate::sampling::PeerSamplingService;
-use crate::update::{Update, UpdateHandler};
+use crate::update::{Update, UpdateHandler, UpdateDecorator};
 use crate::message::gossip::{HeaderMessage, ContentMessage};
 use crate::message::{NoopMessage, MessageType};
 use crate::peer::Peer;
@@ -27,10 +27,8 @@ pub struct GossipService<T> {
     shutdown: Arc<AtomicBool>,
     /// Thread handles
     activities: Vec<JoinHandle<()>>,
-    /// Active updates
-    active_updates: Arc<Mutex<HashMap<String, (Update, UpdateExpirationValue)>>>,
-    /// Removed/expired updates
-    removed_updates: Arc<Mutex<Vec<String>>>,
+    /// Active and expired updates
+    updates: Arc<RwLock<UpdateDecorator>>,
     /// Application callback for receiving new updates
     update_handler: Arc<Mutex<Option<Box<T>>>>,
 }
@@ -49,11 +47,10 @@ where T: UpdateHandler + 'static + Send
         GossipService{
             address,
             peer_sampling_service: Arc::new(Mutex::new(PeerSamplingService::new(address, peer_sampling_config))),
+            updates: Arc::new(RwLock::new(UpdateDecorator::new(gossip_config.update_expiration().clone()))),
             gossip_config,
             shutdown: Arc::new(AtomicBool::new(false)),
             activities: Vec::new(),
-            active_updates: Arc::new(Mutex::new(HashMap::new())),
-            removed_updates: Arc::new(Mutex::new(Vec::new())),
             update_handler: Arc::new(Mutex::new(None)),
         }
     }
@@ -87,12 +84,15 @@ where T: UpdateHandler + 'static + Send
 
         self.update_handler.lock().unwrap().replace(update_handler);
 
-        // start peer sampling
+        // message receiver for peer sampling messages
         let (tx_sampling, rx_sampling) = std::sync::mpsc::channel::<PeerSamplingMessage>();
         {
+            // start peer sampling
             self.peer_sampling_service.lock().unwrap().init(peer_sampling_init, rx_sampling);
         }
+        // message receiver for header messages
         let (tx_header, rx_header) = std::sync::mpsc::channel::<HeaderMessage>();
+        // message receiver for content messages
         let (tx_content, rx_content) = std::sync::mpsc::channel::<ContentMessage>();
 
         // start message header handler
@@ -107,46 +107,47 @@ where T: UpdateHandler + 'static + Send
     }
 
     fn start_message_header_handler(&mut self, receiver: Receiver<HeaderMessage>) -> Result<(), Box<dyn Error>> {
+        let push = self.gossip_config.is_push();
         let pull = self.gossip_config.is_pull();
         let address = self.address.to_string();
-        let active_updates_arc = Arc::clone(&self.active_updates);
-        let removed_updates_arc = Arc::clone(&self.removed_updates);
+        let updates_arc = Arc::clone(&self.updates);
         let handle = std::thread::Builder::new().name(format!("{} - header receiver", address)).spawn(move|| {
             log::info!("Started message header handling thread");
             while let Ok(message) = receiver.recv() {
 
                 if let Ok(sender_address) = message.sender().parse::<SocketAddr>() {
 
-                    let active_updates = active_updates_arc.lock().unwrap();
-                    let removed_updates = removed_updates_arc.lock().unwrap();
+                    let updates = updates_arc.read().unwrap();
 
-                    // Response with message headers
-                    if pull && active_updates.len() > 0 && *message.message_type() == MessageType::Request {
-                        let mut message = HeaderMessage::new_response(address.clone());
-                        active_updates.iter()
-                            .for_each(|(digest, _)| message.push(digest.to_owned()));
-                        match crate::network::send(&sender_address, Box::new(message)) {
+                    // Response with message headers if pull is enabled
+                    if pull && updates.active_count() > 0 && *message.message_type() == MessageType::Request {
+                        let mut response = HeaderMessage::new_response(address.clone());
+                        response.set_headers(updates.active_headers());
+                        match crate::network::send(&sender_address, Box::new(response)) {
                             Ok(written) => log::trace!("Sent header response - {} bytes to {:?}", written, sender_address),
                             Err(e) => log::error!("Error sending header response: {:?}", e)
                         }
                     }
 
-                    // Process received headers
-                    let mut digests = HashMap::new();
-                    message.messages().iter().for_each(|digest| {
-                        if !active_updates.contains_key(digest) && !removed_updates.contains(digest){
-                            log::debug!("New digest: {}", digest);
-                            digests.insert(digest.to_owned(), vec![]);
-                        }
-                        else {
-                            log::trace!("Duplicate digest: {}", digest);
-                        }
-                    });
-                    if digests.len() > 0 {
-                        let message = ContentMessage::new_request(address.clone(), digests);
-                        match crate::network::send(&sender_address, Box::new(message)) {
-                            Ok(written) => log::trace!("Sent content request - {} bytes to {:?}", written, sender_address),
-                            Err(e) => log::error!("Error content request response: {:?}", e)
+                    // Process message if (request and push enabled) or (response and pull enabled)
+                    if *message.message_type() == MessageType::Request && push || *message.message_type() == MessageType::Response && pull {
+
+                        let mut new_digests = HashMap::new();
+                        message.headers().iter().for_each(|digest| {
+                            if updates.is_new(digest) {
+                                log::debug!("New digest: {}", digest);
+                                new_digests.insert(digest.to_owned(), vec![]);
+                            }
+                            else {
+                                log::trace!("Duplicate digest: {}", digest);
+                            }
+                        });
+                        if new_digests.len() > 0 {
+                            let content_request = ContentMessage::new_request(address.clone(), new_digests);
+                            match crate::network::send(&sender_address, Box::new(content_request)) {
+                                Ok(written) => log::trace!("Sent content request - {} bytes to {:?}", written, sender_address),
+                                Err(e) => log::error!("Error content request response: {:?}", e)
+                            }
                         }
                     }
                 }
@@ -159,12 +160,11 @@ where T: UpdateHandler + 'static + Send
         self.activities.push(handle);
         Ok(())
     }
+
     fn start_message_content_handler(&mut self, receiver: Receiver<ContentMessage>) -> Result<(), Box<dyn Error>> {
         let address = self.address.to_string();
-        let active_updates_arc = Arc::clone(&self.active_updates);
-        let removed_updates_arc = Arc::clone(&self.removed_updates);
+        let updates_arc = Arc::clone(&self.updates);
         let update_callback_arc = Arc::clone(&self.update_handler);
-        let expiration_mode = self.gossip_config.update_expiration().clone();
         let handle = std::thread::Builder::new().name(format!("{} - content receiver", address)).spawn(move|| {
             log::info!("Started message content handling thread");
             while let Ok(message) = receiver.recv() {
@@ -172,16 +172,16 @@ where T: UpdateHandler + 'static + Send
                 match message.message_type() {
                     MessageType::Request => {
                         if let Ok(peer_address) = message.sender().parse::<SocketAddr>() {
-                            let active_updates = active_updates_arc.lock().unwrap();
-                            if active_updates.len() > 0 {
-                                let mut map = HashMap::new();
-                                for (digest, _) in message.content() {
-                                    if let Some((update, _)) = active_updates.get(&digest) {
-                                        map.insert(digest.to_owned(), update.content().to_vec());
-                                    }
+                            let updates = updates_arc.read().unwrap();
+                            let mut requested_updates = HashMap::new();
+                            for (digest, _) in message.content() {
+                                if let Some(update) = updates.get_update(&digest) {
+                                    requested_updates.insert(digest.to_owned(), update.content().to_vec());
                                 }
-                                let message = ContentMessage::new_response(address.clone(), map);
-                                match crate::network::send(&peer_address, Box::new(message)) {
+                            }
+                            if requested_updates.len() > 0{
+                                let response = ContentMessage::new_response(address.clone(), requested_updates);
+                                match crate::network::send(&peer_address, Box::new(response)) {
                                     Ok(written) => log::trace!("Sent content response - {} bytes to {:?}", written, peer_address),
                                     Err(e) => log::error!("Error content response: {:?}", e)
                                 }
@@ -190,26 +190,33 @@ where T: UpdateHandler + 'static + Send
                     }
                     MessageType::Response => {
                         if message.len() > 0 {
-                            let mut active_updates = active_updates_arc.lock().unwrap();
-                            let removed_updates = removed_updates_arc.lock().unwrap();
+                            let mut updates = updates_arc.write().unwrap();
                             for (digest, content) in message.content() {
-                                if !active_updates.contains_key(&digest) && !removed_updates.contains(&digest) {
+                                if updates.is_new(&digest) {
                                     let update = Update::new(content.clone());
                                     if digest == *update.digest() {
                                         log::info!("New update received: {}", update.digest());
-                                        active_updates.insert(digest.to_owned(), (update, UpdateExpirationValue::new(expiration_mode.clone())));
-                                        let mutex = update_callback_arc.lock().unwrap();
-                                        if let Some(callback) = mutex.as_ref() {
-                                            let update_app = Update::new(content);
-                                            callback.on_update(update_app);
+                                        match updates.insert_update(update) {
+                                            Ok(()) => {
+                                                // insert OK, notify update handler
+                                                let mutex = update_callback_arc.lock().unwrap();
+                                                if let Some(callback) = mutex.as_ref() {
+                                                    let update = Update::new(content);
+                                                    callback.on_update(update);
+                                                }
+                                                else {
+                                                    log::warn!("No update handler found");
+                                                }
+                                            },
+                                            Err(e) => log::error!("Could not add update: {:?}", e),
                                         }
-
                                     }
                                     else {
-                                        log::warn!("Digests did not match: {} <> {}", digest, update.digest())
+                                        log::warn!("Digests did not match: {} <> {}", digest, update.digest());
                                     }
                                 }
                             }
+                            updates.clear_expired();
                         }
                     }
                 }
@@ -232,8 +239,7 @@ where T: UpdateHandler + 'static + Send
         let gossip_period = self.gossip_config.gossip_period();
         let gossip_deviation = self.gossip_config.gossip_deviation();
         let peer_sampling_arc = Arc::clone(&self.peer_sampling_service);
-        let active_updates_arc = Arc::clone(&self.active_updates);
-        let removed_updates_arc = Arc::clone(&self.removed_updates);
+        let updates_arc = Arc::clone(&self.updates);
         let handle = std::thread::Builder::new().name(format!("{} - gossip activity", self.address().to_string())).spawn(move ||{
             log::info!("Gossip thread started");
             loop {
@@ -254,39 +260,21 @@ where T: UpdateHandler + 'static + Send
                         let mut message = HeaderMessage::new_request(node_address.to_string());
                         if push {
                             // send active headers
-                            let mut active_updates = active_updates_arc.lock().unwrap();
-                            let mut removed_updates = removed_updates_arc.lock().unwrap();
-                            let mut local_expired_updates = Vec::new();
+                            let mut updates = updates_arc.write().unwrap();
 
-                            if active_updates.len() > 0 {
-                                active_updates.iter_mut()
-                                    .for_each(|(digest, (_, expiration_value))| {
-                                        // gossip the update
-                                        message.push(digest.to_owned());
-                                        // check for expiration
-                                        expiration_value.increase_age();
-                                        if expiration_value.has_expired() {
-                                            log::info!("Update expired: {}", digest);
-                                            local_expired_updates.push(digest.clone());
-                                        }
-                                    });
-
-                                local_expired_updates.iter().for_each(|digest| {
-                                    active_updates.remove(digest);
-                                    removed_updates.push(digest.to_owned());
-                                });
-                                // TODO: use parameter
-                                if removed_updates.len() > 1500 {
-                                    removed_updates.drain(0..500);
-                                }
+                            if updates.active_count() > 0 {
+                                let active_headers = updates.active_headers_for_push();
+                                message.set_headers(active_headers);
+                                updates.clear_expired();
                             }
                         }
                         else {
                             // will send empty headers to trigger response
                         }
 
-                        log::debug!("Will send header request with {:?}", message.messages());
+                        log::debug!("Will send header request with {:?}", message.headers());
 
+                        // TODO: check expiration after sending
                         match crate::network::send(&peer_address, Box::new(message)) {
                             Ok(written) => log::trace!("Sent header request - {} bytes to {:?}", written, peer_address),
                             Err(e) => log::error!("Error sending header request: {:?}", e)
@@ -312,19 +300,23 @@ where T: UpdateHandler + 'static + Send
     /// * `bytes` - Content of the message
     pub fn submit(&self, bytes: Vec<u8>) -> Result<(), Box<dyn Error>> {
         let update = Update::new(bytes);
-        let mut active_updates = self.active_updates.lock().unwrap();
-        let removed_updates = self.removed_updates.lock().unwrap();
-        if active_updates.contains_key(update.digest()) {
-            Err("Message already active")?
-        }
-        else if removed_updates.contains(update.digest()) {
-            Err("Submitted expired message")?
-        }
-        else {
+        let mut updates = self.updates.write().unwrap();
+        if updates.is_new(update.digest()) {
             log::info!("New update for submission: {}", update.digest());
-            active_updates.insert(update.digest().to_owned(), (update, UpdateExpirationValue::new(self.gossip_config.update_expiration().clone())));
+            updates.insert_update(update)?;
             Ok(())
         }
+        else {
+            Err("Message already active or expired")?
+        }
+    }
+
+    // for testing
+    pub fn is_active(&self, bytes: Vec<u8>) -> bool {
+        self.updates.read().unwrap().is_active(Update::new(bytes).digest())
+    }
+    pub fn is_expired(&self, bytes: Vec<u8>) -> bool {
+        self.updates.read().unwrap().is_expired(Update::new(bytes).digest())
     }
 
     /// Terminates the gossip protocol and related threads
@@ -347,12 +339,11 @@ where T: UpdateHandler + 'static + Send
         // terminate peer sampling
         self.peer_sampling_service.lock().unwrap().shutdown()?;
 
-        // clean updates
-        self.active_updates.lock().unwrap().clear();
-        self.removed_updates.lock().unwrap().clear();
+        // clear updates
+        self.updates.write().unwrap().clear();
 
         if error {
-            Err("toto")?
+            Err("Error occurred during shutdown")?
         }
         else {
             Ok(())

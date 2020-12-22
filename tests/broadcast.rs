@@ -87,7 +87,7 @@ fn all_updates_received() {
     log::error!("SAMPLING SHOULD BE READY");
     log::error!("--------------------------");
 
-    let message_count = 2;
+    let message_count = 10;
     let mut all_messages = Vec::with_capacity(message_count);
 
     for i in 0..message_count {

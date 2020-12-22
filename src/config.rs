@@ -157,9 +157,9 @@ impl Default for GossipConfig {
         GossipConfig {
             push: true,
             pull: true,
-            gossip_period: 500,
+            gossip_period: 1000,
             gossip_deviation: 0,
-            update_expiration: UpdateExpirationMode::PushCount(10)
+            update_expiration: UpdateExpirationMode::None
         }
     }
 }
@@ -173,12 +173,15 @@ pub enum UpdateExpirationMode {
     DurationMillis(u128),
     /// Updates expire after being pushed the specified number of times
     PushCount(u64),
+    /// Only the specified count of the most recent updates
+    MostRecent(usize, f64),
 }
 
 pub enum UpdateExpirationValue {
     None,
     DurationMillis(std::time::Instant, u128),
     PushCount(u64),
+    MostRecent(std::time::Instant),
 }
 impl UpdateExpirationValue {
     pub fn new(expiration_mode: UpdateExpirationMode) -> Self {
@@ -186,13 +189,18 @@ impl UpdateExpirationValue {
             UpdateExpirationMode::None => UpdateExpirationValue::None,
             UpdateExpirationMode::PushCount(count) => UpdateExpirationValue::PushCount(count),
             UpdateExpirationMode::DurationMillis(ms) => UpdateExpirationValue::DurationMillis(std::time::Instant::now(), ms),
+            UpdateExpirationMode::MostRecent(_, _) => UpdateExpirationValue::MostRecent(std::time::Instant::now()),
         }
     }
 
-    pub fn increase_age(&mut self) {
+    pub fn increase_push_count(&mut self) {
         match self {
-            // decrease time to live
-            UpdateExpirationValue::PushCount(ref mut count) => *count -= 1,
+            // increase push count
+            UpdateExpirationValue::PushCount(ref mut count) => {
+                if *count > 0 {
+                    *count -= 1
+                }
+            },
             _ => (),
         }
     }
@@ -202,6 +210,7 @@ impl UpdateExpirationValue {
             UpdateExpirationValue::None => false,
             UpdateExpirationValue::PushCount(count) => *count == 0,
             UpdateExpirationValue::DurationMillis(start, ttl) => start.elapsed().as_millis() >= *ttl,
+            UpdateExpirationValue::MostRecent(_) => false,
         }
     }
 }

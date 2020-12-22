@@ -14,6 +14,7 @@ impl UpdateHandler for TextMessageListener {
     }
 }
 
+#[allow(dead_code)]
 pub fn configure_logging(level: log::LevelFilter) -> Result<(), Box<dyn Error>>{
 
     use log4rs::encode::pattern::PatternEncoder;
