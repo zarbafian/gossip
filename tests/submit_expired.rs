@@ -1,7 +1,7 @@
 mod common;
 
 use gossip::{GossipService, GossipConfig, PeerSamplingConfig, Peer, UpdateExpirationMode};
-use crate::common::TextMessageListener;
+use crate::common::TextMessageHandler;
 
 #[test]
 fn submit_expired() {
@@ -21,7 +21,7 @@ fn submit_expired() {
     );
     service_1.start(
         Box::new( || None),
-        Box::new(TextMessageListener::new(address_1.to_owned()))
+        Box::new(TextMessageHandler::new(address_1.to_owned()))
     ).unwrap();
 
     let address_2 = "127.0.0.1:9001";
@@ -32,7 +32,7 @@ fn submit_expired() {
     );
     service_2.start(
         Box::new(move || Some(vec![Peer::new(address_1.to_owned())])),
-        Box::new(TextMessageListener::new(address_2.to_owned()))
+        Box::new(TextMessageHandler::new(address_2.to_owned()))
     ).unwrap();
 
     // wait for peer discovery

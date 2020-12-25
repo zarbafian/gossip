@@ -3,7 +3,7 @@ use std::error::Error;
 use crate::config::UpdateExpirationValue;
 use crate::UpdateExpirationMode;
 
-/// A generic message for sending data as binary content
+/// A generic update for sending data as binary content
 pub struct Update {
     /// Message content
     content: Vec<u8>,
@@ -12,7 +12,7 @@ pub struct Update {
 }
 
 impl Update {
-    /// Creates a new message with generic content
+    /// Creates a new update with specified content
     ///
     /// # Arguments
     ///
@@ -47,6 +47,7 @@ pub trait UpdateHandler {
     fn on_update(&self, update: Update);
 }
 
+/// A decorator for handling operations around updates
 pub struct UpdateDecorator {
     /// Active updates
     active_updates: HashMap<String, (Update, UpdateExpirationValue)>,
@@ -54,7 +55,9 @@ pub struct UpdateDecorator {
     removed_updates: Vec<String>,
     /// Strategy for expiring updates
     expiration_mode: UpdateExpirationMode,
+    /// Number of digests of expired updates that are kept
     max_expired_size: usize,
+    /// Margin for cleanup of expired updates
     max_expired_margin: f64,
 }
 impl UpdateDecorator {
@@ -70,25 +73,36 @@ impl UpdateDecorator {
     pub fn active_count(&self) -> usize {
         self.active_updates.len()
     }
+
     pub fn active_headers(&self) -> Vec<String> {
         self.active_updates.iter().map(|(header, _)| header.to_owned()).collect()
     }
+
     pub fn is_new(&self, digest: &String) -> bool {
         !self.active_updates.contains_key(digest) && !self.removed_updates.contains(&digest)
     }
+
     pub fn is_expired(&self, digest: &String) -> bool {
         self.removed_updates.contains(&digest)
     }
+
     pub fn is_active(&self, digest: &String) -> bool {
         self.active_updates.contains_key(digest)
     }
+
     pub fn get_update(&self, digest: &str) -> Option<&Update> {
         self.active_updates.get(digest).map_or(None, |(update, _)| Some(update))
     }
+
     pub fn insert_update(&mut self, update: Update) -> Result<(), Box<dyn Error>> {
-        self.active_updates.insert(update.digest().to_owned(), (update, UpdateExpirationValue::new(self.expiration_mode.clone())));
-        Ok(())
+        if let None = self.active_updates.insert(update.digest().to_owned(), (update, UpdateExpirationValue::new(self.expiration_mode.clone()))) {
+            Ok(())
+        }
+        else {
+            Err("Update already existed")?
+        }
     }
+
     pub fn clear(&mut self) {
         self.active_updates.clear();
         self.removed_updates.clear();

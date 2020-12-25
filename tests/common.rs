@@ -1,16 +1,42 @@
 use std::error::Error;
-use gossip::{UpdateHandler, Update};
+use gossip::{UpdateHandler, Update, GossipService};
+use std::collections::HashMap;
+use std::sync::{Mutex, Arc};
 
-pub struct TextMessageListener {id: String}
-impl TextMessageListener {
-    pub fn new(id: String) -> Self {TextMessageListener{id}}
+// noop handler
+pub struct NoopUpdateHandler;
+impl UpdateHandler for NoopUpdateHandler {
+    fn on_update(&self, update: Update) {}
 }
-impl UpdateHandler for TextMessageListener {
+// text message handler
+pub struct TextMessageHandler {id: String}
+impl TextMessageHandler {
+    pub fn new(id: String) -> Self { TextMessageHandler {id}}
+}
+impl UpdateHandler for TextMessageHandler {
     fn on_update(&self, update: Update) {
         log::info!("--------------------------");
         log::info!("[{}] Received message:", self.id);
         log::info!("{}", String::from_utf8(update.content().to_vec()).unwrap());
         log::info!("--------------------------");
+    }
+}
+// handler storing messages in a shared map
+pub struct MapUpdatingHandler {
+    id: String,
+    map: Arc<Mutex<HashMap<String, Vec<String>>>>,
+}
+impl MapUpdatingHandler {
+    pub fn new(id: String, map: Arc<Mutex<HashMap<String, Vec<String>>>>) -> Self {
+        MapUpdatingHandler {
+            id,
+            map,
+        }
+    }
+}
+impl UpdateHandler for MapUpdatingHandler {
+    fn on_update(&self, update: Update) {
+        self.map.lock().unwrap().entry(self.id.clone()).or_insert(Vec::new()).push(update.digest().clone());
     }
 }
 

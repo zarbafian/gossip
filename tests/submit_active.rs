@@ -1,7 +1,7 @@
 mod common;
 
 use gossip::GossipService;
-use crate::common::TextMessageListener;
+use crate::common::TextMessageHandler;
 
 #[test]
 fn submit_active() {
@@ -9,7 +9,7 @@ fn submit_active() {
     let mut service_1 = GossipService::new_with_defaults(address_1.parse().unwrap());
     service_1.start(
         Box::new( || None),
-        Box::new(TextMessageListener::new(address_1.to_owned()))
+        Box::new(TextMessageHandler::new(address_1.to_owned()))
     ).unwrap();
 
     // JSON message
