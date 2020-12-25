@@ -22,7 +22,7 @@ pub struct GossipService<T> {
     /// Peer sampling service
     peer_sampling_service: Arc<Mutex<PeerSamplingService>>,
     /// Configuration for gossip
-    gossip_config: GossipConfig,
+    gossip_config: Arc<GossipConfig>,
     /// Shutdown requested flag
     shutdown: Arc<AtomicBool>,
     /// Thread handles
@@ -48,7 +48,7 @@ where T: UpdateHandler + 'static + Send
             address,
             peer_sampling_service: Arc::new(Mutex::new(PeerSamplingService::new(address, peer_sampling_config))),
             updates: Arc::new(RwLock::new(UpdateDecorator::new(gossip_config.update_expiration().clone()))),
-            gossip_config,
+            gossip_config: Arc::new(gossip_config),
             shutdown: Arc::new(AtomicBool::new(false)),
             activities: Vec::new(),
             update_handler: Arc::new(Mutex::new(None)),
@@ -107,8 +107,7 @@ where T: UpdateHandler + 'static + Send
     }
 
     fn start_message_header_handler(&mut self, receiver: Receiver<HeaderMessage>) -> Result<(), Box<dyn Error>> {
-        let push = self.gossip_config.is_push();
-        let pull = self.gossip_config.is_pull();
+        let gossip_config_arc = Arc::clone(&self.gossip_config);
         let address = self.address.to_string();
         let updates_arc = Arc::clone(&self.updates);
         let handle = std::thread::Builder::new().name(format!("{} - header receiver", address)).spawn(move|| {
@@ -120,7 +119,7 @@ where T: UpdateHandler + 'static + Send
                     let updates = updates_arc.read().unwrap();
 
                     // Response with message headers if pull is enabled
-                    if pull && updates.active_count() > 0 && *message.message_type() == MessageType::Request {
+                    if gossip_config_arc.is_pull() && updates.active_count() > 0 && *message.message_type() == MessageType::Request {
                         let mut response = HeaderMessage::new_response(address.clone());
                         response.set_headers(updates.active_headers());
                         match crate::network::send(&sender_address, Box::new(response)) {
@@ -130,7 +129,7 @@ where T: UpdateHandler + 'static + Send
                     }
 
                     // Process message if (request and push enabled) or (response and pull enabled)
-                    if *message.message_type() == MessageType::Request && push || *message.message_type() == MessageType::Response && pull {
+                    if *message.message_type() == MessageType::Request && gossip_config_arc.is_push() || *message.message_type() == MessageType::Response && gossip_config_arc.is_pull() {
 
                         let mut new_digests = HashMap::new();
                         message.headers().iter().for_each(|digest| {
@@ -233,11 +232,9 @@ where T: UpdateHandler + 'static + Send
     }
 
     fn start_gossip_activity(&mut self) -> Result<(), Box<dyn Error>> {
-        let push = self.gossip_config.is_push();
+        let gossip_config_arc = Arc::clone(&self.gossip_config);
         let node_address = self.address.to_string();
         let shutdown_requested = Arc::clone(&self.shutdown);
-        let gossip_period = self.gossip_config.gossip_period();
-        let gossip_deviation = self.gossip_config.gossip_deviation();
         let peer_sampling_arc = Arc::clone(&self.peer_sampling_service);
         let updates_arc = Arc::clone(&self.updates);
         let handle = std::thread::Builder::new().name(format!("{} - gossip activity", self.address().to_string())).spawn(move ||{
@@ -248,9 +245,9 @@ where T: UpdateHandler + 'static + Send
                 }
 
                 let deviation =
-                    if gossip_deviation == 0 { 0 }
-                    else { rand::thread_rng().gen_range(0, gossip_deviation) };
-                let sleep = gossip_period + deviation;
+                    if gossip_config_arc.gossip_deviation() == 0 { 0 }
+                    else { rand::thread_rng().gen_range(0, gossip_config_arc.gossip_deviation()) };
+                let sleep = gossip_config_arc.gossip_period() + deviation;
                 std::thread::sleep(std::time::Duration::from_millis(sleep));
 
                 let mut peer_sampling_service = peer_sampling_arc.lock().unwrap();
@@ -258,7 +255,7 @@ where T: UpdateHandler + 'static + Send
                     if let Ok(peer_address) = peer.address().parse::<SocketAddr>() {
                         drop(peer_sampling_service);
                         let mut message = HeaderMessage::new_request(node_address.to_string());
-                        if push {
+                        if gossip_config_arc.is_push() {
                             // send active headers
                             let mut updates = updates_arc.write().unwrap();
 
