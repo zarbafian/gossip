@@ -89,13 +89,14 @@ impl PeerSamplingService {
         // request shutdown
         self.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
         {
-            let guard = self.view.lock().unwrap();
-            crate::network::send(&guard.host_address.parse()?, Box::new(NoopMessage))?;
+            let mut view = self.view.lock().unwrap();
+            view.peers.clear();
+            view.queue.clear();
+            crate::network::send(&view.host_address.parse()?, Box::new(NoopMessage))?;
         }
         // wait for termination
-        let handles = self.thread_handles.drain(..);
         let mut join_error = false;
-        for handle in handles {
+        for handle in self.thread_handles.drain(..) {
             if let Err(e) = handle.join() {
                 log::error!("Error joining thread: {:?}", e);
                 join_error = true;
