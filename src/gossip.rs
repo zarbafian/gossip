@@ -325,15 +325,12 @@ where T: UpdateHandler + 'static + Send
         if let Ok(_) = crate::network::send(self.address(), Box::new(NoopMessage)) {
             // shutdown request sent
         }
-        // let mut error = false;
         let error = Arc::new(Cell::new(false));
         let error_clone = error.clone();
         self.activities.drain(..).for_each(move|handle| {
             if let Err(e) = handle.join() {
                 log::error!("Error during thread join: {:?}", e);
-                //error = true; // TODO this will not change the value of the local variable above
                 error_clone.set(true);
-                log::error!(">>>>>>>>>>>>>>>> ERROR is TRUE: {}", error_clone.get());
             }
         });
         log::info!("All thread terminated, error is {}", error.get());
