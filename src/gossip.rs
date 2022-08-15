@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::thread::JoinHandle;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
@@ -324,14 +325,18 @@ where T: UpdateHandler + 'static + Send
         if let Ok(_) = crate::network::send(self.address(), Box::new(NoopMessage)) {
             // shutdown request sent
         }
-        let mut error = false;
+        // let mut error = false;
+        let error = Arc::new(Cell::new(false));
+        let error_clone = error.clone();
         self.activities.drain(..).for_each(move|handle| {
             if let Err(e) = handle.join() {
                 log::error!("Error during thread join: {:?}", e);
-                error = true;
+                //error = true; // TODO this will not change the value of the local variable above
+                error_clone.set(true);
+                log::error!(">>>>>>>>>>>>>>>> ERROR is TRUE: {}", error_clone.get());
             }
         });
-        log::info!("All thread terminated");
+        log::info!("All thread terminated, error is {}", error.get());
 
         // terminate peer sampling
         self.peer_sampling_service.lock().unwrap().shutdown()?;
@@ -339,7 +344,7 @@ where T: UpdateHandler + 'static + Send
         // clear updates
         self.updates.write().unwrap().clear();
 
-        if error {
+        if error.get() {
             Err("Error occurred during shutdown")?
         }
         else {
@@ -348,3 +353,18 @@ where T: UpdateHandler + 'static + Send
     }
 }
 
+#[cfg(test)]
+mod test {
+    use std::cell::Cell;
+    use std::sync::Arc;
+
+    #[test]
+    fn change_bool_in_closure() {
+        let error = Arc::new(Cell::new(false));
+        let error_clone = error.clone();
+        let _ = (move || {
+                error_clone.set(true);
+        })();
+        assert_eq!(true, error.get());
+    }
+}

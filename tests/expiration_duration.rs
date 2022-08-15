@@ -31,7 +31,7 @@ fn all_updates_received() {
         PeerSamplingConfig::new(push, pull, sampling_period, c, h, s),
         GossipConfig::new(push, pull, gossip_period, update_expiration.clone())
     );
-    service_1.start(
+    let _ = service_1.start(
         Box::new(move|| { None }),
         Box::new(NoopUpdateHandler)
     );
@@ -45,7 +45,7 @@ fn all_updates_received() {
         PeerSamplingConfig::new(push, pull, sampling_period, c, h, s),
         GossipConfig::new(push, pull, gossip_period, update_expiration.clone())
     );
-    service_2.start(
+    let _ = service_2.start(
         init_handler,
         Box::new(NoopUpdateHandler)
     );
@@ -58,7 +58,7 @@ fn all_updates_received() {
     for i in 0..message_count {
         let message = format!("MSGID {}", i).as_bytes().to_vec();
         let update = Update::new(message.clone());
-        service_2.submit(update.content().to_vec());
+        let _ = service_2.submit(update.content().to_vec());
         messages.push(message);
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
@@ -75,6 +75,6 @@ fn all_updates_received() {
         assert!(service_2.is_expired(message));
     }
 
-    service_1.shutdown();
-    service_2.shutdown();
+    let _ = service_1.shutdown();
+    let _ = service_2.shutdown();
 }

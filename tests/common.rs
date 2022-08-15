@@ -1,12 +1,13 @@
 use std::error::Error;
-use gossip::{UpdateHandler, Update, GossipService};
+use gossip::{UpdateHandler, Update};
 use std::collections::HashMap;
 use std::sync::{Mutex, Arc};
 
 // noop handler
 pub struct NoopUpdateHandler;
 impl UpdateHandler for NoopUpdateHandler {
-    fn on_update(&self, update: Update) {}
+    // TODO why update is not used ?
+    fn on_update(&self, _update: Update) {}
 }
 // text message handler
 pub struct TextMessageHandler {id: String}
@@ -60,4 +61,17 @@ pub fn configure_logging(level: log::LevelFilter) -> Result<(), Box<dyn Error>>{
     log4rs::init_config(config)?;
 
     Ok(())
+}
+
+// Test to avoid the "method unused message"
+#[test]
+fn test_1() {
+    let peer_messages = Arc::new(Mutex::new(HashMap::new()));
+    let _handler = MapUpdatingHandler::new("".to_owned(), peer_messages);
+}
+
+// Test to avoid the "method unused message"
+#[test]
+fn test_2() {
+    TextMessageHandler::new("".to_string());
 }

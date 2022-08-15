@@ -52,6 +52,7 @@ impl PeerSamplingService {
         // get address of initial peer
         if let Some(initial_peers) = initial_peer() {
             let mut view = self.view.lock().unwrap();
+            // Store the inital peers in the node information (view)
             for peer in initial_peers {
                 if peer.address() != &self.address.to_string() {
                     view.peers.push(peer);
@@ -291,7 +292,7 @@ impl View {
                 }
             }
             new_view_start.append(&mut new_view_end);
-            std::mem::replace(&mut self.peers, new_view_start);
+            let _ = std::mem::replace(&mut self.peers, new_view_start); // TODO handle the return value
         }
     }
 
@@ -355,7 +356,7 @@ impl View {
             }
         });
         let new_view = Vec::from_iter(unique_peers);
-        std::mem::replace(&mut self.peers, new_view);
+        let _ = std::mem::replace(&mut self.peers, new_view); // TODO handle the return value
     }
 
     /// Removes the oldest items from the view based on the healing parameter
@@ -377,7 +378,7 @@ impl View {
                     new_view.push(peer.clone());
                 }
             }
-            std::mem::replace(&mut self.peers, new_view);
+            let _ = std::mem::replace(&mut self.peers, new_view);
         }
     }
 
