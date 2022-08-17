@@ -8,7 +8,7 @@ fn all_updates_received() {
     use gossip::{GossipConfig, PeerSamplingConfig, Peer, GossipService, Update, UpdateExpirationMode};
     use common::MapUpdatingHandler;
 
-    common::configure_logging(log::LevelFilter::Info).unwrap();
+    common::configure_logging(log::LevelFilter::Debug).unwrap();
 
     // messages received by each peer
     let peer_messages = Arc::new(Mutex::new(HashMap::new()));

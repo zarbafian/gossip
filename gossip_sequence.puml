@@ -1,0 +1,38 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+autonumber
+actor Test_1 #red
+participant GossipService as GossipService
+participant PeerSamplingService as PeerSamplingService
+control Receiver as Receiver
+control Sampler as Sampler
+control HeaderHandler as HeaderHandler
+
+Test_1 -> GossipService: start()
+GossipService -> PeerSamplingService: init()
+
+group receiver_thread
+    PeerSamplingService -> PeerSamplingService: start_receiver()
+    PeerSamplingService -->x Receiver: spawn
+end
+
+group sampler_thread
+    PeerSamplingService -> PeerSamplingService: start_sampling_activity()
+    PeerSamplingService -->x Sampler: spawn
+end
+
+GossipService <-- PeerSamplingService: init() response
+
+group header_handler_thread
+    GossipService -> GossipService: start_message_header_handler()
+    GossipService -->x HeaderHandler: spawn
+end
+
+
+GossipService -> GossipService: start_message_content_handler()
+GossipService -> GossipService:: start_network_listener()
+GossipService -> GossipService:: start_gossip_activity()
+
+Test_1 <- GossipService: start() response
+@enduml

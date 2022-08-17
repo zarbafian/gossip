@@ -5,7 +5,7 @@ fn all_updates_received() {
     use gossip::{GossipConfig, PeerSamplingConfig, Peer, GossipService, Update, UpdateExpirationMode};
     use common::NoopUpdateHandler;
 
-    common::configure_logging(log::LevelFilter::Info).unwrap();
+    common::configure_logging(log::LevelFilter::Debug).unwrap();
 
     let mut messages = Vec::new();
 

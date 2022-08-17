@@ -41,7 +41,8 @@ where M: Message + Serialize
 /// * `peer_sampling_sender` - Used to dispatch peer sampling messages
 /// * `header_sender` - Used to dispatch gossip header messages
 /// * `content_sender` - Used to dispatch gossip content messages
-pub fn listen(address: &SocketAddr, shutdown: Arc<std::sync::atomic::AtomicBool>, peer_sampling_sender: Sender<PeerSamplingMessage>, header_sender: Sender<HeaderMessage>, content_sender: Sender<ContentMessage>) -> std::io::Result<JoinHandle<()>> {
+pub fn listen(address: &SocketAddr, shutdown: Arc<std::sync::atomic::AtomicBool>, peer_sampling_sender: Sender<PeerSamplingMessage>,
+              header_sender: Sender<HeaderMessage>, content_sender: Sender<ContentMessage>) -> std::io::Result<JoinHandle<()>> {
 
     let listener = std::net::TcpListener::bind(address)?;
     log::info!("Listener started at {}", address);
