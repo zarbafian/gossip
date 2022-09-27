@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::thread::JoinHandle;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
@@ -106,6 +107,8 @@ where T: UpdateHandler + 'static + Send
         Ok(())
     }
 
+
+    // This routine will run the process that receives the new digests
     fn start_message_header_handler(&mut self, receiver: Receiver<HeaderMessage>) -> Result<(), Box<dyn Error>> {
         let gossip_config_arc = Arc::clone(&self.gossip_config);
         let address = self.address.to_string();
@@ -142,6 +145,7 @@ where T: UpdateHandler + 'static + Send
                             }
                         });
                         if new_digests.len() > 0 {
+                            // Ask for message content
                             let content_request = ContentMessage::new_request(address.clone(), new_digests);
                             match crate::network::send(&sender_address, Box::new(content_request)) {
                                 Ok(written) => log::trace!("Sent content request - {} bytes to {:?}", written, sender_address),
@@ -160,6 +164,7 @@ where T: UpdateHandler + 'static + Send
         Ok(())
     }
 
+    // Handle the reception of new content
     fn start_message_content_handler(&mut self, receiver: Receiver<ContentMessage>) -> Result<(), Box<dyn Error>> {
         let address = self.address.to_string();
         let updates_arc = Arc::clone(&self.updates);
@@ -271,7 +276,7 @@ where T: UpdateHandler + 'static + Send
 
                         log::debug!("Will send header request with {:?}", message.headers());
 
-                        // TODO: check expiration after sending
+                        // check expiration after sending
                         match crate::network::send(&peer_address, Box::new(message)) {
                             Ok(written) => log::trace!("Sent header request - {} bytes to {:?}", written, peer_address),
                             Err(e) => log::error!("Error sending header request: {:?}", e)
@@ -324,14 +329,15 @@ where T: UpdateHandler + 'static + Send
         if let Ok(_) = crate::network::send(self.address(), Box::new(NoopMessage)) {
             // shutdown request sent
         }
-        let mut error = false;
+        let error = Arc::new(Cell::new(false));
+        let error_clone = error.clone();
         self.activities.drain(..).for_each(move|handle| {
             if let Err(e) = handle.join() {
                 log::error!("Error during thread join: {:?}", e);
-                error = true;
+                error_clone.set(true);
             }
         });
-        log::info!("All thread terminated");
+        log::info!("All thread terminated, error is {}", error.get());
 
         // terminate peer sampling
         self.peer_sampling_service.lock().unwrap().shutdown()?;
@@ -339,7 +345,7 @@ where T: UpdateHandler + 'static + Send
         // clear updates
         self.updates.write().unwrap().clear();
 
-        if error {
+        if error.get() {
             Err("Error occurred during shutdown")?
         }
         else {
@@ -348,3 +354,19 @@ where T: UpdateHandler + 'static + Send
     }
 }
 
+#[cfg(test)]
+mod test {
+    use std::cell::Cell;
+    use std::sync::Arc;
+
+    // Test the inner mutability in a closure
+    #[test]
+    fn change_bool_in_closure() {
+        let error = Arc::new(Cell::new(false));
+        let error_clone = error.clone();
+        let _ = (move || {
+                error_clone.set(true);
+        })();
+        assert_eq!(true, error.get());
+    }
+}

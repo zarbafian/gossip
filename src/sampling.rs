@@ -52,6 +52,7 @@ impl PeerSamplingService {
         // get address of initial peer
         if let Some(initial_peers) = initial_peer() {
             let mut view = self.view.lock().unwrap();
+            // Store the initial peers in the node information (view)
             for peer in initial_peers {
                 if peer.address() != &self.address.to_string() {
                     view.peers.push(peer);
@@ -60,11 +61,15 @@ impl PeerSamplingService {
         }
 
         // handle received messages
+        log::info!("[[[ start receiver ]]]");
         let receiver_handle = self.start_receiver(receiver);
+        log::info!("[[[ receiver started ]]]");
         self.thread_handles.push(receiver_handle);
 
         // start peer sampling
+        log::info!("[[[ start peer sampling ]]]");
         let sampling_handle = self.start_sampling_activity();
+        log::info!("[[[ peer sampling started ]]]");
         self.thread_handles.push(sampling_handle);
 
         log::info!("All activity threads were started");
@@ -126,6 +131,7 @@ impl PeerSamplingService {
     }
 
     /// Creates a thread for handling messages
+    /// TODO message received from external nodes to connect to the current node  ?
     ///
     /// # Arguments
     ///
@@ -137,13 +143,15 @@ impl PeerSamplingService {
         std::thread::Builder::new().name(format!("{} - gbps receiver", &address)).spawn(move|| {
             log::info!("Started message handling thread");
             while let Ok(message) = receiver.recv() {
-                log::debug!("Received: {:?}", message);
+                log::debug!(">>>> Received: {:?}", message);
+                // In case of "Request"
                 let mut view = view_arc.lock().unwrap();
                 if let MessageType::Request = message.message_type() {
                     if sampling_config.is_pull() {
                         let buffer = Self::build_buffer(address.clone(), &sampling_config, &mut view);
                         log::debug!("Built response buffer: {:?}", buffer);
                         if let Ok(remote_address) = message.sender().parse::<SocketAddr>() {
+                            // TODO Send back the list of peers that we know ?
                             match crate::network::send(&remote_address, Box::new(PeerSamplingMessage::new_response(address.clone(), Some(buffer)))) {
                                 Ok(written) => log::trace!("Buffer sent successfully ({} bytes)", written),
                                 Err(e) => log::error!("Error sending buffer: {}", e),
@@ -155,6 +163,8 @@ impl PeerSamplingService {
                     }
                 }
 
+                // If there is a view
+                let mut view = view_arc.lock().unwrap();
                 if let Some(buffer) = message.view() {
                     view.select(sampling_config.view_size(), sampling_config.healing_factor(), sampling_config.swapping_factor(), &buffer);
                 }
@@ -169,6 +179,7 @@ impl PeerSamplingService {
     }
 
     /// Creates a thread that periodically executes the peer sampling
+    /// The peer sampling activity consist of sending "Request" messages to other nodes
     fn start_sampling_activity(&self) -> JoinHandle<()> {
         let address = self.address.to_string();
         let config = self.config.clone();
@@ -179,12 +190,12 @@ impl PeerSamplingService {
             loop {
                 // Compute time for sleep cycle
                 let deviation =
-                    if config.sampling_deviation() == 0 { 0 }
-                    else { rand::thread_rng().gen_range(0, config.sampling_deviation()) };
+                    if config.sampling_deviation() == 0 { 0 } else { rand::thread_rng().gen_range(0, config.sampling_deviation()) };
                 let sleep_time = config.sampling_period() + deviation;
                 std::thread::sleep(std::time::Duration::from_millis(sleep_time));
 
                 let mut view = view_arc.lock().unwrap();
+                // Get an existing peer randomly
                 if let Some(peer) = view.select_peer() {
                     if config.is_push() {
                         let buffer = Self::build_buffer(address.clone(), &config, &mut view);
@@ -194,26 +205,22 @@ impl PeerSamplingService {
                                 Ok(written) => log::trace!("Buffer sent successfully ({} bytes)", written),
                                 Err(e) => log::error!("Error sending buffer: {}", e),
                             }
-                        }
-                        else {
+                        } else {
                             log::error!("Could not parse sender address {}", &peer.address());
                         }
-                    }
-                    else {
+                    } else {
                         // send empty view to trigger response
                         if let Ok(remote_address) = &peer.address().parse::<SocketAddr>() {
                             match crate::network::send(remote_address, Box::new(PeerSamplingMessage::new_request(address.clone(), None))) {
                                 Ok(written) => log::trace!("Empty view sent successfully ({} bytes)", written),
                                 Err(e) => log::error!("Error sending empty view: {}", e),
                             }
-                        }
-                        else {
+                        } else {
                             log::error!("Could not parse sender address {}", &peer.address());
                         }
                     }
                     view.increase_age();
-                }
-                else {
+                } else {
                     log::warn!("No peer found for sampling")
                 }
 
@@ -291,7 +298,7 @@ impl View {
                 }
             }
             new_view_start.append(&mut new_view_end);
-            std::mem::replace(&mut self.peers, new_view_start);
+            let _ = std::mem::replace(&mut self.peers, new_view_start); // TODO handle the return value
         }
     }
 
@@ -355,7 +362,7 @@ impl View {
             }
         });
         let new_view = Vec::from_iter(unique_peers);
-        std::mem::replace(&mut self.peers, new_view);
+        let _ = std::mem::replace(&mut self.peers, new_view); // TODO handle the return value
     }
 
     /// Removes the oldest items from the view based on the healing parameter
@@ -377,7 +384,7 @@ impl View {
                     new_view.push(peer.clone());
                 }
             }
-            std::mem::replace(&mut self.peers, new_view);
+            let _ = std::mem::replace(&mut self.peers, new_view);
         }
     }
 

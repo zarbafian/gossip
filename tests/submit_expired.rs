@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use gossip::{GossipService, GossipConfig, PeerSamplingConfig, Peer, UpdateExpirationMode};
 use crate::common::TextMessageHandler;
@@ -19,7 +19,7 @@ fn submit_expired() {
         PeerSamplingConfig::new_with_deviation(true, true, sampling_period, sampling_deviation, 10, 1, 4),
         GossipConfig::new_with_deviation(true, true, gossip_period, gossip_deviation, expiration_mode.clone())
     );
-    service_1.start(
+    let _ = service_1.start(
         Box::new( || None),
         Box::new(TextMessageHandler::new(address_1.to_owned()))
     ).unwrap();
@@ -30,7 +30,7 @@ fn submit_expired() {
         PeerSamplingConfig::new_with_deviation(true, true, sampling_period, sampling_deviation, 10, 1, 4),
         GossipConfig::new_with_deviation(true, true, gossip_period, gossip_deviation, expiration_mode)
     );
-    service_2.start(
+    let _ = service_2.start(
         Box::new(move || Some(vec![Peer::new(address_1.to_owned())])),
         Box::new(TextMessageHandler::new(address_2.to_owned()))
     ).unwrap();
