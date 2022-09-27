@@ -63,15 +63,3 @@ pub fn configure_logging(level: log::LevelFilter) -> Result<(), Box<dyn Error>>{
     Ok(())
 }
 
-// Test to avoid the "method unused message"
-#[test]
-fn test_1() {
-    let peer_messages = Arc::new(Mutex::new(HashMap::new()));
-    let _handler = MapUpdatingHandler::new("".to_owned(), peer_messages);
-}
-
-// Test to avoid the "method unused message"
-#[test]
-fn test_2() {
-    TextMessageHandler::new("".to_string());
-}

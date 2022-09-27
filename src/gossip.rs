@@ -108,9 +108,7 @@ where T: UpdateHandler + 'static + Send
     }
 
 
-    // TODO This routine will run the process that receives the new digests
-    //      Why do we send some data back to the sender ???
-    //      To request the new content ?
+    // This routine will run the process that receives the new digests
     fn start_message_header_handler(&mut self, receiver: Receiver<HeaderMessage>) -> Result<(), Box<dyn Error>> {
         let gossip_config_arc = Arc::clone(&self.gossip_config);
         let address = self.address.to_string();
@@ -147,7 +145,7 @@ where T: UpdateHandler + 'static + Send
                             }
                         });
                         if new_digests.len() > 0 {
-                            // TODO Ask for message content ?
+                            // Ask for message content
                             let content_request = ContentMessage::new_request(address.clone(), new_digests);
                             match crate::network::send(&sender_address, Box::new(content_request)) {
                                 Ok(written) => log::trace!("Sent content request - {} bytes to {:?}", written, sender_address),
@@ -166,7 +164,7 @@ where T: UpdateHandler + 'static + Send
         Ok(())
     }
 
-    // TODO handle the reception of new content ?
+    // Handle the reception of new content
     fn start_message_content_handler(&mut self, receiver: Receiver<ContentMessage>) -> Result<(), Box<dyn Error>> {
         let address = self.address.to_string();
         let updates_arc = Arc::clone(&self.updates);
@@ -278,7 +276,7 @@ where T: UpdateHandler + 'static + Send
 
                         log::debug!("Will send header request with {:?}", message.headers());
 
-                        // TODO: check expiration after sending
+                        // check expiration after sending
                         match crate::network::send(&peer_address, Box::new(message)) {
                             Ok(written) => log::trace!("Sent header request - {} bytes to {:?}", written, peer_address),
                             Err(e) => log::error!("Error sending header request: {:?}", e)
@@ -361,6 +359,7 @@ mod test {
     use std::cell::Cell;
     use std::sync::Arc;
 
+    // Test the inner mutability in a closure
     #[test]
     fn change_bool_in_closure() {
         let error = Arc::new(Cell::new(false));

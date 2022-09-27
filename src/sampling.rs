@@ -145,6 +145,7 @@ impl PeerSamplingService {
             while let Ok(message) = receiver.recv() {
                 log::debug!(">>>> Received: {:?}", message);
                 // In case of "Request"
+                let mut view = view_arc.lock().unwrap();
                 if let MessageType::Request = message.message_type() {
                     if sampling_config.is_pull() {
                         let buffer = Self::build_buffer(address.clone(), &sampling_config, &mut view);
@@ -178,7 +179,7 @@ impl PeerSamplingService {
     }
 
     /// Creates a thread that periodically executes the peer sampling
-    /// TODO the peer sampling activity consist of sending "Request" messages to other nodes ?
+    /// The peer sampling activity consist of sending "Request" messages to other nodes
     fn start_sampling_activity(&self) -> JoinHandle<()> {
         let address = self.address.to_string();
         let config = self.config.clone();
