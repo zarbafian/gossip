@@ -22,7 +22,7 @@ fn all_updates_received() {
     let size = 3;
     let update_expiration = UpdateExpirationMode::MostRecent(size, 0.);
 
-    // create first peer with no contact peer
+    // create a first peer with no contact peer
     let initial_peer = "127.0.0.1:9000";
 
     // create and initiate the peer sampling service
